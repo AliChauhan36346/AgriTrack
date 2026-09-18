@@ -1,0 +1,130 @@
+/**
+ * AgriRoute Master TypeScript Declarations
+ * Strictly typed definitions for FieldOfficer, BreadcrumbPoint, OfficerStop, UserRole, and State stores.
+ */
+
+export type UserRole = 'owner' | 'officer';
+
+export type OfficerStatus = 'active' | 'stationary' | 'offline' | 'online' | 'syncing';
+
+export interface GeoCoordinate {
+  latitude: number;
+  longitude: number;
+}
+
+export interface BreadcrumbPoint {
+  id: string;
+  officerId: string;
+  latitude: number;
+  longitude: number;
+  speedKmh: number;
+  batteryLevel: number;
+  source: 'mobile_app' | 'hardware_tracker';
+  recordedAt: string;
+  // Optional/computed fields for extended telemetry & backward compatibility
+  speed?: number;
+  heading?: number;
+  accuracy?: number;
+  altitude?: number;
+  timestamp?: number;
+  isSynced?: boolean;
+}
+
+// Backward-compatible alias
+export type Breadcrumb = BreadcrumbPoint;
+
+export interface FieldOfficer {
+  id: string;
+  fullName: string;
+  phone: string;
+  assignedTerritory: string;
+  currentStatus: OfficerStatus;
+  batteryLevel: number; // 0 - 100
+  speedKmh: number; // km/h
+  lastSeenAt: string;
+  currentLocation: {
+    latitude: number;
+    longitude: number;
+    speed?: number;
+    heading?: number;
+    timestamp?: number;
+  };
+  hasHardwareTracker: boolean;
+  trackerImei?: string;
+  
+  // Backward compatibility fields
+  name?: string;
+  roleTitle?: string;
+  status?: OfficerStatus;
+  isCharging?: boolean;
+  lastPingTime?: string;
+  todayDistanceKm?: number;
+  todayVisitsCount?: number;
+  queuedPingsCount?: number;
+  avatarUrl?: string;
+}
+
+// Backward-compatible alias
+export type Officer = FieldOfficer;
+
+export interface OfficerStop {
+  id: string;
+  officerId: string;
+  latitude: number;
+  longitude: number;
+  stopName: string;
+  arrivedAt: string;
+  departedAt: string;
+  durationMinutes: number;
+
+  // Backward compatibility fields
+  dealerName?: string;
+  dwellMinutes?: number;
+  location?: GeoCoordinate;
+  address?: string;
+  arrivalTime?: string;
+  departureTime?: string;
+  purpose?: string;
+  notes?: string;
+  contactPerson?: string;
+}
+
+// Backward-compatible alias
+export type RouteStop = OfficerStop;
+
+export interface VisitLog {
+  id: string;
+  dealerName: string;
+  officerId: string;
+  officerName: string;
+  purpose: 'Pesticide Order' | 'Fertilizer Inspection' | 'Seed Sampling' | 'Payment Collection' | 'General Follow-up';
+  notes: string;
+  latitude: number;
+  longitude: number;
+  timestamp: number;
+  syncStatus: 'queued' | 'synced';
+  amountCollected?: number;
+}
+
+export interface HardwareTracker {
+  id: string;
+  imei: string;
+  model: string;
+  assignedOfficerId?: string;
+  batteryLevel: number;
+  status: 'active' | 'unpaired' | 'low_battery';
+  lastSignalTime: string;
+  firmwareVersion: string;
+}
+
+export type MapFilterType = 'all' | 'active' | 'offline';
+
+export type PlaybackSpeed = 1 | 2;
+
+export interface ShiftStats {
+  distanceKm: number;
+  visitsCount: number;
+  queuedCount: number;
+  durationMinutes: number;
+  avgSpeedKmh: number;
+}
