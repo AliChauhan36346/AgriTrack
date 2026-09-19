@@ -19,134 +19,135 @@ interface SyncBannerProps {
 }
 
 export const SyncBanner: React.FC<SyncBannerProps> = ({ style }) => {
-  const offlineQueue = useTrackingStore((state) => state.offlineQueue);
+  const unsyncedCount = useTrackingStore((state) => state.unsyncedCount);
+  const isOnline = useTrackingStore((state) => state.isOnline);
   const isSyncing = useTrackingStore((state) => state.isSyncing);
-  const isSimulatedOffline = useTrackingStore((state) => state.isSimulatedOffline);
-  const syncQueue = useTrackingStore((state) => state.syncQueue);
-  const lastSyncTime = useTrackingStore((state) => state.lastSyncTime);
+  const triggerSync = useTrackingStore((state) => state.triggerSync);
 
-  const queuedCount = offlineQueue.length;
-  const isOffline = isSimulatedOffline || queuedCount > 0;
-
-  const handleSyncPress = async () => {
-    if (isSyncing) return;
-    await syncQueue();
-  };
-
-  if (!isOffline && queuedCount === 0) {
+  // Case 1: Device is Offline
+  if (!isOnline) {
     return (
-      <View style={[styles.container, styles.syncedContainer, style]}>
+      <View style={[styles.container, styles.offlineContainer, style]}>
         <View style={styles.contentRow}>
-          <CheckCircle2 size={18} color={colors.primary} />
-          <Text style={styles.syncedText}>
-            All data synced {lastSyncTime ? `• ${lastSyncTime}` : ''}
+          <WifiOff size={18} color={colors.warningAmberDark} style={styles.statusIcon} />
+          <Text style={styles.offlineText}>
+            Offline Mode — {unsyncedCount} {unsyncedCount === 1 ? 'location' : 'locations'} saved safely on phone.
           </Text>
         </View>
       </View>
     );
   }
 
-  return (
-    <View style={[styles.container, styles.offlineContainer, style]}>
-      <View style={styles.contentRow}>
-        <WifiOff size={18} color={colors.warningAmberDark} />
-        <View style={styles.textColumn}>
-          <Text style={styles.offlineTitle}>
-            Offline Mode: {queuedCount} {queuedCount === 1 ? 'point' : 'points'} queued
-          </Text>
-          <Text style={styles.offlineSubtitle}>
-            Coordinates will automatically sync when network returns
+  // Case 2: Online with items queued (Syncing / Pending Sync)
+  if (isOnline && unsyncedCount > 0) {
+    return (
+      <View style={[styles.container, styles.syncingContainer, style]}>
+        <View style={styles.contentRow}>
+          <ActivityIndicator size="small" color={colors.accentBlue} style={styles.spinner} />
+          <Text style={styles.syncingText}>
+            Back Online — Syncing {unsyncedCount} {unsyncedCount === 1 ? 'location' : 'locations'}...
           </Text>
         </View>
-      </View>
 
-      <TouchableOpacity
-        style={styles.retryButton}
-        onPress={handleSyncPress}
-        disabled={isSyncing}
-        activeOpacity={0.7}
-        accessibilityRole="button"
-        accessibilityLabel="Retry syncing offline queue"
-      >
-        {isSyncing ? (
-          <ActivityIndicator size="small" color={colors.cardSurface} />
-        ) : (
-          <View style={styles.retryInner}>
-            <RefreshCw size={14} color={colors.cardSurface} style={styles.refreshIcon} />
-            <Text style={styles.retryText}>Sync Now</Text>
-          </View>
+        {!isSyncing && (
+          <TouchableOpacity
+            style={styles.syncNowButton}
+            onPress={() => triggerSync()}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Sync queued locations now"
+          >
+            <RefreshCw size={13} color={colors.accentBlue} style={styles.refreshIcon} />
+            <Text style={styles.syncNowText}>Sync</Text>
+          </TouchableOpacity>
         )}
-      </TouchableOpacity>
+      </View>
+    );
+  }
+
+  // Case 3: Online and completely synced
+  return (
+    <View style={[styles.container, styles.syncedContainer, style]}>
+      <View style={styles.contentRow}>
+        <CheckCircle2 size={18} color={colors.primary} style={styles.statusIcon} />
+        <Text style={styles.syncedText}>
+          All locations synced with main shop.
+        </Text>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
     borderRadius: spacing.cardRadiusSm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginVertical: 6,
+    borderWidth: 1,
   },
   syncedContainer: {
-    backgroundColor: colors.primaryLight,
-    borderColor: '#A3CFBB',
-    borderWidth: 1,
+    backgroundColor: '#EDF7ED',
+    borderColor: '#C8E6C9',
+  },
+  syncingContainer: {
+    backgroundColor: colors.accentBlueLight,
+    borderColor: '#BFDBFE',
   },
   offlineContainer: {
     backgroundColor: colors.warningAmberLight,
     borderColor: '#FDE68A',
-    borderWidth: 1,
   },
   contentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+  },
+  statusIcon: {
     marginRight: 10,
   },
-  textColumn: {
-    marginLeft: 10,
-    flex: 1,
+  spinner: {
+    marginRight: 10,
   },
   syncedText: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.semibold,
     color: colors.primary,
-    marginLeft: 8,
+    flex: 1,
   },
-  offlineTitle: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.warningAmberDark,
-  },
-  offlineSubtitle: {
+  syncingText: {
     fontSize: typography.fontSizes.xs,
-    color: colors.neutralMuted,
-    marginTop: 1,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.accentBlue,
+    flex: 1,
   },
-  retryButton: {
-    backgroundColor: colors.warningAmberDark,
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    minHeight: 38,
-    minWidth: 84,
-    justifyContent: 'center',
-    alignItems: 'center',
+  offlineText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.warningAmberDark,
+    flex: 1,
+    lineHeight: 18,
   },
-  retryInner: {
+  syncNowButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: colors.cardSurface,
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginLeft: 8,
   },
   refreshIcon: {
     marginRight: 4,
   },
-  retryText: {
+  syncNowText: {
     fontSize: typography.fontSizes.xs,
     fontWeight: typography.fontWeights.bold,
-    color: colors.cardSurface,
+    color: colors.accentBlue,
   },
 });

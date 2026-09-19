@@ -1,9 +1,17 @@
 import { create } from 'zustand';
 import { BreadcrumbPoint, VisitLog } from '../types';
 import { mockVisitLogs, MOCK_ROUTE_BREADCRUMBS, MOCK_OFFICERS } from '../mockData';
+import { getUnsyncedCount, insertLocation } from '../services/database';
 
-interface TrackingState {
+export interface TrackingState {
+  // Required state
   isShiftActive: boolean;
+  unsyncedCount: number;
+  isOnline: boolean;
+  isSyncing: boolean;
+  lastSyncTime: string | null;
+
+  // Telemetry & metrics state
   shiftStartTime: number | null;
   currentBreadcrumb: BreadcrumbPoint | null;
   offlineQueue: BreadcrumbPoint[];
@@ -13,15 +21,18 @@ interface TrackingState {
   visitsCount: number;
   batteryLevel: number;
   isCharging: boolean;
-  isSyncing: boolean;
-  lastSyncTime: string | null;
   isSimulatedOffline: boolean;
 
-  // Actions
-  toggleShift: () => void;
+  // Required actions
   startShift: () => void;
   endShift: () => void;
-  enqueueBreadcrumb: (breadcrumb: Omit<BreadcrumbPoint, 'id' | 'isSynced'>) => void;
+  setOnlineStatus: (isOnline: boolean) => void;
+  refreshUnsyncedCount: () => Promise<number>;
+  triggerSync: () => Promise<number>;
+
+  // Extended actions for backwards compatibility
+  toggleShift: () => void;
+  enqueueBreadcrumb: (breadcrumb: Omit<BreadcrumbPoint, 'id' | 'isSynced'>) => Promise<string>;
   syncQueue: () => Promise<number>;
   clearQueue: () => void;
   addVisitLog: (log: Omit<VisitLog, 'id' | 'timestamp' | 'syncStatus'>) => void;
@@ -29,47 +40,29 @@ interface TrackingState {
   toggleSimulatedOffline: () => void;
 }
 
-// 14 unsynced local queue points for realistic offline tracking simulation
-const INITIAL_OFFLINE_QUEUE: BreadcrumbPoint[] = Array.from({ length: 14 }, (_, i) => ({
-  id: `bc-unsynced-${i + 1}`,
-  officerId: 'off-01',
-  latitude: Number((22.3430 + i * 0.0018).toFixed(4)),
-  longitude: Number((73.2195 + i * 0.0015).toFixed(4)),
-  speedKmh: Math.floor(25 + (i % 5) * 4),
-  speed: Math.floor(25 + (i % 5) * 4),
-  heading: 42,
-  batteryLevel: Math.max(70, 84 - Math.floor(i / 2)),
-  source: i % 2 === 0 ? 'hardware_tracker' : 'mobile_app',
-  recordedAt: `11:${String(35 + i).padStart(2, '0')} AM`,
-  accuracy: 4,
-  altitude: 55,
-  timestamp: Date.now() - (14 - i) * 60000,
-  isSynced: false,
-}));
+let syncHandler: (() => Promise<{ success: boolean; syncedCount: number }>) | null = null;
+
+export function registerSyncHandler(handler: () => Promise<{ success: boolean; syncedCount: number }>) {
+  syncHandler = handler;
+}
 
 export const useTrackingStore = create<TrackingState>((set, get) => ({
   isShiftActive: true,
-  shiftStartTime: Date.now() - 3600000 * 4, // 4 hours ago
+  unsyncedCount: 0,
+  isOnline: true,
+  isSyncing: false,
+  lastSyncTime: '18 mins ago',
+
+  shiftStartTime: Date.now() - 3600000 * 4,
   currentBreadcrumb: MOCK_ROUTE_BREADCRUMBS[MOCK_ROUTE_BREADCRUMBS.length - 1],
-  offlineQueue: INITIAL_OFFLINE_QUEUE,
+  offlineQueue: [],
   syncedBreadcrumbs: MOCK_ROUTE_BREADCRUMBS,
   visitLogs: mockVisitLogs,
   distanceKm: MOCK_OFFICERS[0].todayDistanceKm ?? 42.8,
   visitsCount: MOCK_OFFICERS[0].todayVisitsCount ?? 6,
   batteryLevel: MOCK_OFFICERS[0].batteryLevel,
   isCharging: false,
-  isSyncing: false,
-  lastSyncTime: '18 mins ago',
   isSimulatedOffline: false,
-
-  toggleShift: () => {
-    const currentState = get().isShiftActive;
-    if (currentState) {
-      get().endShift();
-    } else {
-      get().startShift();
-    }
-  },
 
   startShift: () => {
     set({
@@ -85,61 +78,100 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
     });
   },
 
-  enqueueBreadcrumb: (data) => {
-    const newPoint: BreadcrumbPoint = {
-      ...data,
-      id: `bc-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+  toggleShift: () => {
+    if (get().isShiftActive) {
+      get().endShift();
+    } else {
+      get().startShift();
+    }
+  },
+
+  setOnlineStatus: (isOnline: boolean) => {
+    const wasOffline = !get().isOnline;
+    set({ isOnline });
+
+    // When transitioning from offline to online, trigger sync if items are queued
+    if (wasOffline && isOnline && get().unsyncedCount > 0) {
+      get().triggerSync().catch(() => {});
+    }
+  },
+
+  refreshUnsyncedCount: async () => {
+    try {
+      const count = await getUnsyncedCount();
+      set({ unsyncedCount: count });
+      return count;
+    } catch {
+      return get().unsyncedCount;
+    }
+  },
+
+  triggerSync: async () => {
+    if (get().isSyncing) return 0;
+    if (!syncHandler) return 0;
+    try {
+      const result = await syncHandler();
+      return result.syncedCount;
+    } catch (error) {
+      console.warn('[trackingStore] triggerSync error:', error);
+      return 0;
+    }
+  },
+
+  enqueueBreadcrumb: async (data) => {
+    const isOnline = get().isOnline && !get().isSimulatedOffline;
+    const nowIso = new Date().toISOString();
+
+    const newPointData: Omit<BreadcrumbPoint, 'id'> = {
+      officerId: data.officerId || 'off-01',
+      latitude: data.latitude,
+      longitude: data.longitude,
       speedKmh: data.speedKmh ?? data.speed ?? 0,
       batteryLevel: data.batteryLevel ?? get().batteryLevel,
       source: data.source ?? 'mobile_app',
-      recordedAt: data.recordedAt ?? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isSynced: !get().isSimulatedOffline,
+      recordedAt: data.recordedAt ?? nowIso,
+      isSynced: false,
     };
 
-    if (get().isSimulatedOffline) {
+    try {
+      // Insert into local SQLite database
+      const id = await insertLocation(newPointData);
+      const fullPoint: BreadcrumbPoint = { ...newPointData, id };
+
       set((state) => ({
-        currentBreadcrumb: newPoint,
-        offlineQueue: [...state.offlineQueue, newPoint],
+        currentBreadcrumb: fullPoint,
         distanceKm: Number((state.distanceKm + 0.12).toFixed(1)),
       }));
-    } else {
-      set((state) => ({
-        currentBreadcrumb: newPoint,
-        syncedBreadcrumbs: [...state.syncedBreadcrumbs, newPoint],
-        distanceKm: Number((state.distanceKm + 0.12).toFixed(1)),
-      }));
+
+      // Refresh SQLite unsynced count
+      await get().refreshUnsyncedCount();
+
+      // If online and not simulated offline, trigger background sync
+      if (isOnline) {
+        get().triggerSync().catch(() => {});
+      }
+
+      return id;
+    } catch (error) {
+      console.error('[trackingStore] enqueueBreadcrumb error:', error);
+      return '';
     }
   },
 
   syncQueue: async () => {
-    const queue = get().offlineQueue;
-    if (queue.length === 0) return 0;
-
-    set({ isSyncing: true });
-    // Simulate network transmission of offline points
-    await new Promise((resolve) => setTimeout(resolve, 1400));
-
-    const syncedBatch = queue.map((pt) => ({ ...pt, isSynced: true }));
-    const count = queue.length;
-
-    set((state) => ({
-      isSyncing: false,
-      offlineQueue: [],
-      syncedBreadcrumbs: [...state.syncedBreadcrumbs, ...syncedBatch],
-      lastSyncTime: 'Just now',
-    }));
-
-    return count;
+    return await get().triggerSync();
   },
 
-  clearQueue: () => set({ offlineQueue: [] }),
+  clearQueue: () => {
+    set({ unsyncedCount: 0, offlineQueue: [] });
+  },
 
   addVisitLog: (logData) => {
     const newLog: VisitLog = {
       ...logData,
       id: `vl-${Date.now()}`,
       timestamp: Date.now(),
-      syncStatus: get().isSimulatedOffline ? 'queued' : 'synced',
+      syncStatus: get().isOnline && !get().isSimulatedOffline ? 'synced' : 'queued',
     };
 
     set((state) => ({
@@ -153,6 +185,13 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   },
 
   toggleSimulatedOffline: () => {
-    set((state) => ({ isSimulatedOffline: !state.isSimulatedOffline }));
+    const newOffline = !get().isSimulatedOffline;
+    set({ isSimulatedOffline: newOffline });
+    get().setOnlineStatus(!newOffline);
   },
 }));
+
+// Initialize initial unsynced count from SQLite on startup
+getUnsyncedCount().then((count) => {
+  useTrackingStore.setState({ unsyncedCount: count });
+}).catch(() => {});

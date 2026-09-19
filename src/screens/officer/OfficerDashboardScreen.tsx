@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -40,10 +40,14 @@ export const OfficerDashboardScreen: React.FC = () => {
 
   const currentOfficer = useAuthStore((state) => state.currentOfficer);
   const isShiftActive = useTrackingStore((state) => state.isShiftActive);
-  const toggleShift = useTrackingStore((state) => state.toggleShift);
+  const startShift = useTrackingStore((state) => state.startShift);
+  const endShift = useTrackingStore((state) => state.endShift);
+  const unsyncedCount = useTrackingStore((state) => state.unsyncedCount);
+  const refreshUnsyncedCount = useTrackingStore((state) => state.refreshUnsyncedCount);
+  const enqueueBreadcrumb = useTrackingStore((state) => state.enqueueBreadcrumb);
+  const isOnline = useTrackingStore((state) => state.isOnline);
   const distanceKm = useTrackingStore((state) => state.distanceKm);
   const visitsCount = useTrackingStore((state) => state.visitsCount);
-  const offlineQueue = useTrackingStore((state) => state.offlineQueue);
   const batteryLevel = useTrackingStore((state) => state.batteryLevel);
   const isCharging = useTrackingStore((state) => state.isCharging);
   const currentBreadcrumb = useTrackingStore((state) => state.currentBreadcrumb);
@@ -51,6 +55,36 @@ export const OfficerDashboardScreen: React.FC = () => {
   const toggleSimulatedOffline = useTrackingStore((state) => state.toggleSimulatedOffline);
 
   const [isCheckInModalVisible, setIsCheckInModalVisible] = useState(false);
+
+  // Refresh SQLite unsynced count on screen load
+  useEffect(() => {
+    refreshUnsyncedCount();
+  }, [refreshUnsyncedCount]);
+
+  // Mock interval when shift is active: inserts a dummy coordinate every 10 seconds
+  // to test local SQLite offline queue increments while offline
+  useEffect(() => {
+    if (!isShiftActive) return;
+
+    const interval = setInterval(async () => {
+      const dummyLat = Number((30.1984 + (Math.random() - 0.5) * 0.008).toFixed(4));
+      const dummyLng = Number((71.4687 + (Math.random() - 0.5) * 0.008).toFixed(4));
+      const dummySpeed = Math.floor(15 + Math.random() * 25);
+      const dummyBattery = Math.max(12, 85 - Math.floor(Math.random() * 5));
+
+      await enqueueBreadcrumb({
+        officerId: currentOfficer?.id || 'off-01',
+        latitude: dummyLat,
+        longitude: dummyLng,
+        speedKmh: dummySpeed,
+        batteryLevel: dummyBattery,
+        source: 'mobile_app',
+        recordedAt: new Date().toISOString(),
+      });
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [isShiftActive, currentOfficer, enqueueBreadcrumb]);
 
   const defaultOfficer = MOCK_OFFICERS[0];
   const officerName = currentOfficer?.fullName ?? currentOfficer?.name ?? defaultOfficer.fullName;
@@ -66,12 +100,12 @@ export const OfficerDashboardScreen: React.FC = () => {
           {
             text: 'End Shift',
             style: 'destructive',
-            onPress: () => toggleShift(),
+            onPress: () => endShift(),
           },
         ]
       );
     } else {
-      toggleShift();
+      startShift();
     }
   };
 
@@ -158,10 +192,10 @@ export const OfficerDashboardScreen: React.FC = () => {
           />
           <MetricCounter
             title="Local Queue"
-            value={offlineQueue.length}
+            value={unsyncedCount}
             unit="Pings"
-            variant={offlineQueue.length > 0 ? 'warning' : 'default'}
-            icon={<Clock size={14} color={offlineQueue.length > 0 ? colors.warningAmber : colors.neutralMuted} />}
+            variant={unsyncedCount > 0 ? 'warning' : 'default'}
+            icon={<Clock size={14} color={unsyncedCount > 0 ? colors.warningAmber : colors.neutralMuted} />}
             style={styles.metricItem}
           />
         </View>
@@ -185,7 +219,7 @@ export const OfficerDashboardScreen: React.FC = () => {
           onPress={() => {
             Alert.alert(
               'Daily Summary',
-              `• Distance: ${distanceKm} km\n• Completed Visits: ${visitsCount} dealers\n• Breadcrumbs Recorded: 84 points\n• Synced to Cloud: ${offlineQueue.length === 0 ? '100%' : `${offlineQueue.length} queued`}`
+              `• Distance: ${distanceKm} km\n• Completed Visits: ${visitsCount} dealers\n• Breadcrumbs Recorded: 84 points\n• Synced to Cloud: ${unsyncedCount === 0 ? '100%' : `${unsyncedCount} queued in SQLite`}`
             );
           }}
         />
