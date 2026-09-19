@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   StatusBar,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ShieldCheck, UserCheck, CheckCircle2, ArrowRight } from 'lucide-react-native';
 import { UserRole } from '../../types';
 import { useAuthStore } from '../../store/authStore';
@@ -35,6 +35,7 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
 
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
+    onContinueToOtp?.();
   };
 
   const handleSendOtp = async () => {
@@ -51,7 +52,7 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
       <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
         {/* Header Branding Banner */}
@@ -142,11 +143,11 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
             </View>
           </TouchableOpacity>
 
-          {/* Phone Input with +91 Prefix */}
+          {/* Phone Input with Mobile Number */}
           <View style={styles.phoneSection}>
             <Text style={styles.inputLabel}>Mobile Phone Number</Text>
             <Input
-              placeholder="e.g. 98251 23456"
+              placeholder="e.g. 0300 1234567"
               value={phoneInput}
               onChangeText={(text) => {
                 setPhoneInput(text);

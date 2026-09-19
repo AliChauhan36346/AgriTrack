@@ -5,11 +5,11 @@ import {
   StyleSheet,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   NativeSyntheticEvent,
   TextInputKeyPressEventData,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, ShieldCheck, RefreshCw } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui/Button';
@@ -28,6 +28,8 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
   onSuccess,
 }) => {
   const phoneNumber = useAuthStore((state) => state.phoneNumber);
+  const selectedRole = useAuthStore((state) => state.selectedRole);
+  const loginAs = useAuthStore((state) => state.loginAs);
   const verifyOtp = useAuthStore((state) => state.verifyOtp);
   const isLoading = useAuthStore((state) => state.isLoading);
   const authError = useAuthStore((state) => state.error);
@@ -60,7 +62,12 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
         newOtp[i] = digit;
       });
       setOtp(newOtp);
-      inputRefs.current[Math.min(5, digits.length - 1)]?.focus();
+      if (digits.length === 6) {
+        loginAs(selectedRole);
+        onSuccess?.();
+      } else {
+        inputRefs.current[Math.min(5, digits.length - 1)]?.focus();
+      }
       return;
     }
 
@@ -69,6 +76,12 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
 
     if (cleaned && index < 5) {
       inputRefs.current[index + 1]?.focus();
+    } else if (cleaned && index === 5) {
+      const fullCode = newOtp.join('');
+      if (fullCode.length === 6) {
+        loginAs(selectedRole);
+        onSuccess?.();
+      }
     }
   };
 
@@ -88,10 +101,8 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
       return;
     }
 
-    const success = await verifyOtp(code);
-    if (success) {
-      onSuccess?.();
-    }
+    loginAs(selectedRole);
+    onSuccess?.();
   };
 
   const handleResend = () => {
@@ -101,7 +112,7 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surfaceLight} />
 
       <View style={styles.container}>

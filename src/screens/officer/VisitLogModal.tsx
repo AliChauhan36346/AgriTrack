@@ -6,8 +6,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { X, MapPin, Store, FileText, CheckCircle2 } from 'lucide-react-native';
 import { VisitLog } from '../../types';
 import { useTrackingStore } from '../../store/trackingStore';
@@ -103,15 +103,15 @@ export const VisitLogModal: React.FC<VisitLogModalProps> = ({ visible, onClose }
               <View style={styles.gpsStamp}>
                 <MapPin size={16} color={colors.primary} />
                 <Text style={styles.gpsText}>
-                  GPS: {currentBreadcrumb?.latitude.toFixed(4) ?? '22.3072'} N,{' '}
-                  {currentBreadcrumb?.longitude.toFixed(4) ?? '73.1812'} E (±4m)
+                  GPS: {currentBreadcrumb?.latitude.toFixed(4) ?? '30.1984'} N,{' '}
+                  {currentBreadcrumb?.longitude.toFixed(4) ?? '71.4687'} E (±4m)
                 </Text>
               </View>
 
               {/* Dealer Name */}
               <Input
-                label="Dealer / Krishi Kendra Name *"
-                placeholder="e.g. Kisan Seva Kendra"
+                label="Dealer / Zari Markaz Name *"
+                placeholder="e.g. Ittehad Zari Markaz, Ghalla Mandi"
                 value={dealerName}
                 onChangeText={(t) => {
                   setDealerName(t);

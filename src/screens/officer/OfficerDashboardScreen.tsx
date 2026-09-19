@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   StatusBar,
   Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Power,
   Store,
@@ -76,7 +76,7 @@ export const OfficerDashboardScreen: React.FC = () => {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surfaceLight} />
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -216,9 +216,9 @@ export const OfficerDashboardScreen: React.FC = () => {
             <Text style={styles.telemetryTitle}>Live Geolocation Telemetry</Text>
           </View>
           <Text style={styles.telemetryData}>
-            Lat: {currentBreadcrumb?.latitude.toFixed(5) ?? '22.30720'} • Lng:{' '}
-            {currentBreadcrumb?.longitude.toFixed(5) ?? '73.18120'} • Speed:{' '}
-            {currentBreadcrumb?.speed ?? 0} km/h • Heading: {currentBreadcrumb?.heading ?? 0}°
+            Lat: {currentBreadcrumb?.latitude.toFixed(5) ?? '30.19840'} • Lng:{' '}
+            {currentBreadcrumb?.longitude.toFixed(5) ?? '71.46870'} • Speed:{' '}
+            {currentBreadcrumb?.speedKmh ?? currentBreadcrumb?.speed ?? 0} km/h • Heading: {currentBreadcrumb?.heading ?? 0}°
           </Text>
         </Card>
       </ScrollView>

@@ -2,12 +2,12 @@ import React from 'react';
 import { View, StyleSheet, StatusBar } from 'react-native';
 import { useAuthStore } from '../store/authStore';
 import { AuthNavigator } from './AuthNavigator';
-import { OfficerTabs } from './OfficerTabs';
-import { OwnerTabs } from './OwnerTabs';
+import { OwnerTabsNavigator } from './OwnerTabsNavigator';
+import { OfficerStackNavigator } from './OfficerStackNavigator';
 
 export const RootNavigator: React.FC = () => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const selectedRole = useAuthStore((state) => state.selectedRole);
+  const userRole = useAuthStore((state) => state.userRole);
 
   if (!isAuthenticated) {
     return <AuthNavigator />;
@@ -16,7 +16,7 @@ export const RootNavigator: React.FC = () => {
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-      {selectedRole === 'officer' ? <OfficerTabs /> : <OwnerTabs />}
+      {userRole === 'owner' ? <OwnerTabsNavigator /> : <OfficerStackNavigator />}
     </View>
   );
 };
@@ -26,3 +26,4 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+

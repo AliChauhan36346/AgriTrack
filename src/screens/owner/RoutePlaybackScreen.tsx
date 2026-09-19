@@ -4,10 +4,10 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   StatusBar,
   Dimensions,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   ArrowLeft,
   MapPin,
@@ -77,7 +77,7 @@ export const RoutePlaybackScreen: React.FC<RoutePlaybackScreenProps> = ({
   const firstBreadcrumb = MOCK_ROUTE_BREADCRUMBS[0];
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surfaceLight} />
 
       <View style={styles.container}>
