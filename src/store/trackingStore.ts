@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { BreadcrumbPoint, VisitLog } from '../types';
 import { mockVisitLogs, MOCK_ROUTE_BREADCRUMBS, MOCK_OFFICERS } from '../mockData';
 import { getUnsyncedCount, insertLocation } from '../services/database';
+import {
+  requestLocationPermissions,
+  startTracking,
+  stopTracking,
+} from '../services/backgroundLocation';
 
 export interface TrackingState {
   // Required state
@@ -24,14 +29,14 @@ export interface TrackingState {
   isSimulatedOffline: boolean;
 
   // Required actions
-  startShift: () => void;
-  endShift: () => void;
+  startShift: (officerId?: string) => Promise<boolean>;
+  endShift: () => Promise<void>;
   setOnlineStatus: (isOnline: boolean) => void;
   refreshUnsyncedCount: () => Promise<number>;
   triggerSync: () => Promise<number>;
 
   // Extended actions for backwards compatibility
-  toggleShift: () => void;
+  toggleShift: (officerId?: string) => void;
   enqueueBreadcrumb: (breadcrumb: Omit<BreadcrumbPoint, 'id' | 'isSynced'>) => Promise<string>;
   syncQueue: () => Promise<number>;
   clearQueue: () => void;
@@ -47,13 +52,13 @@ export function registerSyncHandler(handler: () => Promise<{ success: boolean; s
 }
 
 export const useTrackingStore = create<TrackingState>((set, get) => ({
-  isShiftActive: true,
+  isShiftActive: false,
   unsyncedCount: 0,
   isOnline: true,
   isSyncing: false,
   lastSyncTime: '18 mins ago',
 
-  shiftStartTime: Date.now() - 3600000 * 4,
+  shiftStartTime: null,
   currentBreadcrumb: MOCK_ROUTE_BREADCRUMBS[MOCK_ROUTE_BREADCRUMBS.length - 1],
   offlineQueue: [],
   syncedBreadcrumbs: MOCK_ROUTE_BREADCRUMBS,
@@ -64,25 +69,40 @@ export const useTrackingStore = create<TrackingState>((set, get) => ({
   isCharging: false,
   isSimulatedOffline: false,
 
-  startShift: () => {
+  startShift: async (officerId?: string) => {
+    const hasPermission = await requestLocationPermissions();
+    if (!hasPermission) {
+      return false;
+    }
+
+    const targetOfficerId = officerId || 'off-01';
+    await startTracking(targetOfficerId);
+
     set({
       isShiftActive: true,
       shiftStartTime: Date.now(),
     });
+
+    return true;
   },
 
-  endShift: () => {
+  endShift: async () => {
+    await stopTracking();
+
     set({
       isShiftActive: false,
       shiftStartTime: null,
     });
+
+    // Trigger a final sync attempt for any remaining points in the queue
+    await get().triggerSync();
   },
 
-  toggleShift: () => {
+  toggleShift: (officerId?: string) => {
     if (get().isShiftActive) {
-      get().endShift();
+      get().endShift().catch(() => {});
     } else {
-      get().startShift();
+      get().startShift(officerId).catch(() => {});
     }
   },
 

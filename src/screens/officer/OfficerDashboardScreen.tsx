@@ -90,7 +90,7 @@ export const OfficerDashboardScreen: React.FC = () => {
   const officerName = currentOfficer?.fullName ?? currentOfficer?.name ?? defaultOfficer.fullName;
   const officerTerritory = currentOfficer?.assignedTerritory ?? defaultOfficer.assignedTerritory;
 
-  const handleShiftToggle = () => {
+  const handleShiftToggle = async () => {
     if (isShiftActive) {
       Alert.alert(
         'End Shift?',
@@ -100,12 +100,15 @@ export const OfficerDashboardScreen: React.FC = () => {
           {
             text: 'End Shift',
             style: 'destructive',
-            onPress: () => endShift(),
+            onPress: async () => {
+              await endShift();
+            },
           },
         ]
       );
     } else {
-      startShift();
+      const officerId = currentOfficer?.id || 'off-01';
+      await startShift(officerId);
     }
   };
 
