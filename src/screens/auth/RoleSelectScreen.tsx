@@ -8,11 +8,21 @@ import {
   StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ShieldCheck, UserCheck, CheckCircle2, ArrowRight } from 'lucide-react-native';
+import {
+  ShieldCheck,
+  UserCheck,
+  CheckCircle2,
+  ArrowRight,
+  KeyRound,
+  Store,
+  Sparkles,
+  Phone,
+} from 'lucide-react-native';
 import { UserRole } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
+import { OwnerRegisterModal } from './OwnerRegisterModal';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
@@ -25,30 +35,60 @@ interface RoleSelectScreenProps {
 export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueToOtp }) => {
   const selectedRole = useAuthStore((state) => state.selectedRole);
   const setSelectedRole = useAuthStore((state) => state.setSelectedRole);
+  const loginWithAccessCode = useAuthStore((state) => state.loginWithAccessCode);
+  const loginAs = useAuthStore((state) => state.loginAs);
+  const authError = useAuthStore((state) => state.error);
+  const registeredOfficers = useAuthStore((state) => state.registeredOfficers);
   const phoneNumber = useAuthStore((state) => state.phoneNumber);
   const setPhoneNumber = useAuthStore((state) => state.setPhoneNumber);
   const requestOtp = useAuthStore((state) => state.requestOtp);
   const isLoading = useAuthStore((state) => state.isLoading);
 
-  const [phoneInput, setPhoneInput] = useState(phoneNumber);
-  const [phoneError, setPhoneError] = useState<string | null>(null);
+  // Field Officer Code State
+  const [accessCodeInput, setAccessCodeInput] = useState('');
+  const [officerError, setOfficerError] = useState<string | null>(null);
+
+  // Owner Phone State
+  const [ownerPhoneInput, setOwnerPhoneInput] = useState(phoneNumber);
+  const [ownerPhoneError, setOwnerPhoneError] = useState<string | null>(null);
+
+  // Owner Register Modal State
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
 
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
-    onContinueToOtp?.();
+    setOfficerError(null);
+    setOwnerPhoneError(null);
   };
 
-  const handleSendOtp = async () => {
-    if (phoneInput.trim().length < 10) {
-      setPhoneError('Please enter a valid 10-digit mobile number');
+  const handleOfficerLogin = (codeToUse?: string) => {
+    const code = codeToUse || accessCodeInput;
+    if (!code.trim()) {
+      setOfficerError('براہ کرم اپنا آفیسر رسائی کوڈ درج کریں (Please enter your access code)');
       return;
     }
-    setPhoneError(null);
-    setPhoneNumber(phoneInput);
-    const success = await requestOtp(phoneInput);
+    setOfficerError(null);
+    const result = loginWithAccessCode(code);
+    if (!result.success && result.error) {
+      setOfficerError(result.error);
+    }
+  };
+
+  const handleOwnerPhoneLogin = async () => {
+    if (ownerPhoneInput.trim().length < 10) {
+      setOwnerPhoneError('درست 10 ہندسوں کا موبائل نمبر درج کریں');
+      return;
+    }
+    setOwnerPhoneError(null);
+    setPhoneNumber(ownerPhoneInput);
+    const success = await requestOtp(ownerPhoneInput);
     if (success) {
       onContinueToOtp?.();
     }
+  };
+
+  const handleDemoOwnerLogin = () => {
+    loginAs('owner');
   };
 
   return (
@@ -60,117 +100,222 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
           <View style={styles.badgeContainer}>
             <Text style={styles.badgeText}>AgriRoute Fleet GPS</Text>
           </View>
-          <Text style={styles.brandTitle}>Welcome to AgriRoute</Text>
+          <Text style={styles.brandTitle}>AgriRoute (ایگری روٹ)</Text>
           <Text style={styles.brandSubtitle}>
-            Offline-first location intelligence for agricultural field officers & distributor owners.
+            زرعی فیلڈ آفیسرز کی آف لائن لوکیشن ٹریکنگ اور دکان داروں کے لیے لائیو مانیٹرنگ
           </Text>
         </View>
 
         <View style={styles.formCard}>
-          <Text style={styles.sectionHeading}>Select Your Portal Role</Text>
+          <Text style={styles.sectionHeading}>اپنا کردار منتخب کریں (Select Role)</Text>
 
-          {/* Role Card 1: Field Officer */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => handleRoleSelect('officer')}
-            style={[
-              styles.roleCard,
-              elevation.sm,
-              selectedRole === 'officer' && styles.roleCardActive,
-            ]}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: selectedRole === 'officer' }}
-          >
-            <View
+          {/* Role Toggle Tabs */}
+          <View style={styles.roleToggleRow}>
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => handleRoleSelect('officer')}
               style={[
-                styles.roleIconBox,
-                selectedRole === 'officer' && styles.roleIconBoxActive,
+                styles.roleToggleTab,
+                selectedRole === 'officer' && styles.roleToggleTabActive,
               ]}
             >
               <UserCheck
-                size={26}
+                size={20}
                 color={selectedRole === 'officer' ? colors.primary : colors.neutralMuted}
+                style={styles.tabIcon}
               />
-            </View>
-
-            <View style={styles.roleTextBox}>
-              <View style={styles.roleTitleRow}>
-                <Text style={styles.roleTitle}>Field Officer</Text>
-                {selectedRole === 'officer' && (
-                  <CheckCircle2 size={20} color={colors.primary} />
-                )}
-              </View>
-              <Text style={styles.roleDescription}>
-                GPS shift tracking, offline dealer check-ins, route sync, and territory metrics.
+              <Text
+                style={[
+                  styles.roleToggleTabText,
+                  selectedRole === 'officer' && styles.roleToggleTabTextActive,
+                ]}
+              >
+                فیلڈ آفیسر (Officer)
               </Text>
-            </View>
-          </TouchableOpacity>
+            </TouchableOpacity>
 
-          {/* Role Card 2: Shop Owner / Admin */}
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => handleRoleSelect('owner')}
-            style={[
-              styles.roleCard,
-              elevation.sm,
-              selectedRole === 'owner' && styles.roleCardActive,
-            ]}
-            accessibilityRole="radio"
-            accessibilityState={{ selected: selectedRole === 'owner' }}
-          >
-            <View
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => handleRoleSelect('owner')}
               style={[
-                styles.roleIconBox,
-                selectedRole === 'owner' && styles.roleIconBoxActive,
+                styles.roleToggleTab,
+                selectedRole === 'owner' && styles.roleToggleTabActive,
               ]}
             >
-              <ShieldCheck
-                size={26}
+              <Store
+                size={20}
                 color={selectedRole === 'owner' ? colors.primary : colors.neutralMuted}
+                style={styles.tabIcon}
               />
-            </View>
-
-            <View style={styles.roleTextBox}>
-              <View style={styles.roleTitleRow}>
-                <Text style={styles.roleTitle}>Shop Owner / Admin</Text>
-                {selectedRole === 'owner' && (
-                  <CheckCircle2 size={20} color={colors.primary} />
-                )}
-              </View>
-              <Text style={styles.roleDescription}>
-                Live fleet overview, route replay, dwell-time stop audits, and hardware tracker pairing.
+              <Text
+                style={[
+                  styles.roleToggleTabText,
+                  selectedRole === 'owner' && styles.roleToggleTabTextActive,
+                ]}
+              >
+                دکان دار (Shop Owner)
               </Text>
-            </View>
-          </TouchableOpacity>
-
-          {/* Phone Input with Mobile Number */}
-          <View style={styles.phoneSection}>
-            <Text style={styles.inputLabel}>Mobile Phone Number</Text>
-            <Input
-              placeholder="e.g. 0300 1234567"
-              value={phoneInput}
-              onChangeText={(text) => {
-                setPhoneInput(text);
-                if (phoneError) setPhoneError(null);
-              }}
-              keyboardType="phone-pad"
-              maxLength={15}
-              error={phoneError}
-              helperText="We will send a 6-digit verification code"
-            />
+            </TouchableOpacity>
           </View>
 
-          {/* Submit Button */}
-          <Button
-            title="Continue to Verification"
-            onPress={handleSendOtp}
-            isLoading={isLoading}
-            size="lg"
-            rightIcon={<ArrowRight size={20} color={colors.cardSurface} />}
-            style={styles.submitBtn}
-          />
+          {/* ========================================================================= */}
+          {/* TAB 1: FIELD OFFICER - ACCESS CODE ONLY LOGIN                             */}
+          {/* ========================================================================= */}
+          {selectedRole === 'officer' && (
+            <View style={styles.tabContentContainer}>
+              <View style={styles.infoBanner}>
+                <KeyRound size={20} color={colors.primary} style={styles.infoBannerIcon} />
+                <View style={styles.infoBannerTextWrap}>
+                  <Text style={styles.infoBannerTitle}>صرف رسائی کوڈ سے لاگ ان</Text>
+                  <Text style={styles.infoBannerSubtitle}>
+                    کسی پاسورڈ یا ای میل کی ضرورت نہیں۔ دکان دار کا دیا گیا کوڈ درج کریں۔
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.inputSection}>
+                <Text style={styles.inputLabel}>
+                  آفیسر رسائی کوڈ درج کریں (Officer Access Code) *
+                </Text>
+                <Input
+                  placeholder="مثال: FO-101 یا FO-4892"
+                  value={accessCodeInput}
+                  onChangeText={(val) => {
+                    setAccessCodeInput(val.toUpperCase());
+                    if (officerError) setOfficerError(null);
+                  }}
+                  autoCapitalize="characters"
+                  maxLength={10}
+                  leftIcon={<KeyRound size={18} color={colors.primary} />}
+                  error={officerError || authError || undefined}
+                />
+              </View>
+
+              {/* Submit Officer Login Button */}
+              <Button
+                title="شفت شروع کریں (Enter Shift / Login)"
+                onPress={() => handleOfficerLogin()}
+                size="lg"
+                rightIcon={<ArrowRight size={20} color={colors.cardSurface} />}
+                style={styles.primaryActionBtn}
+              />
+
+              {/* Quick Demo Officer Codes for Immediate Testing */}
+              <View style={styles.demoSection}>
+                <View style={styles.demoSectionHeader}>
+                  <Sparkles size={14} color={colors.accentBlue} />
+                  <Text style={styles.demoSectionTitle}>
+                    ٹیسٹنگ کے لیے کلک کریں (Quick Demo Codes):
+                  </Text>
+                </View>
+                <View style={styles.demoChipsRow}>
+                  {registeredOfficers.slice(0, 3).map((off) => (
+                    <TouchableOpacity
+                      key={off.id}
+                      style={styles.demoChip}
+                      onPress={() => {
+                        setAccessCodeInput(off.accessCode);
+                        handleOfficerLogin(off.accessCode);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.demoChipCode}>{off.accessCode}</Text>
+                      <Text style={styles.demoChipName}>
+                        {off.fullName.split(' ')[0]} ({off.assignedTerritory.split(' ')[0]})
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 2: SHOP OWNER - REGISTER NEW SHOP OR LOGIN                           */}
+          {/* ========================================================================= */}
+          {selectedRole === 'owner' && (
+            <View style={styles.tabContentContainer}>
+              <View style={styles.infoBanner}>
+                <ShieldCheck size={20} color={colors.primary} style={styles.infoBannerIcon} />
+                <View style={styles.infoBannerTextWrap}>
+                  <Text style={styles.infoBannerTitle}>دکان دار اور ڈسٹری بیوٹر پورٹل</Text>
+                  <Text style={styles.infoBannerSubtitle}>
+                    اپنے فیلڈ آفیسرز کو شامل کریں، کوڈز جاری کریں اور لائیو روٹس دیکھیں۔
+                  </Text>
+                </View>
+              </View>
+
+              {/* Button A: Register New Shop Account */}
+              <TouchableOpacity
+                style={[styles.registerShopBtn, elevation.sm]}
+                onPress={() => setIsRegisterModalOpen(true)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.registerIconBox}>
+                  <Store size={22} color={colors.primary} />
+                </View>
+                <View style={styles.registerTextBox}>
+                  <Text style={styles.registerTitle}>نیا دکان کھاتہ بنائیں</Text>
+                  <Text style={styles.registerSubtitle}>
+                    Register New Shop Account (1 Minute Setup)
+                  </Text>
+                </View>
+                <ArrowRight size={18} color={colors.primary} />
+              </TouchableOpacity>
+
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>یا موجودہ اکاؤنٹ میں داخل ہوں</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* Mobile Phone Input for Existing Owner */}
+              <View style={styles.inputSection}>
+                <Text style={styles.inputLabel}>دکان مالک کا موبائل نمبر (Mobile Number)</Text>
+                <Input
+                  placeholder="0300 8765432"
+                  value={ownerPhoneInput}
+                  onChangeText={(text) => {
+                    setOwnerPhoneInput(text);
+                    if (ownerPhoneError) setOwnerPhoneError(null);
+                  }}
+                  keyboardType="phone-pad"
+                  maxLength={15}
+                  leftIcon={<Phone size={18} color={colors.neutralMuted} />}
+                  error={ownerPhoneError || undefined}
+                />
+              </View>
+
+              <Button
+                title="او ٹی پی حاصل کریں (Send Verification OTP)"
+                onPress={handleOwnerPhoneLogin}
+                isLoading={isLoading}
+                size="lg"
+                style={styles.primaryActionBtn}
+              />
+
+              {/* Demo Owner Shortcut */}
+              <TouchableOpacity
+                style={styles.demoOwnerLink}
+                onPress={handleDemoOwnerLogin}
+                activeOpacity={0.7}
+              >
+                <Sparkles size={15} color={colors.accentBlue} style={styles.inlineIcon} />
+                <Text style={styles.demoOwnerLinkText}>
+                  ڈیمو دکان مالک لاگ ان کریں (المدینہ زرعی مرکز)
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
+
+      {/* Owner Registration Modal */}
+      <OwnerRegisterModal
+        visible={isRegisterModalOpen}
+        onClose={() => setIsRegisterModalOpen(false)}
+        onSuccess={() => setIsRegisterModalOpen(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -185,8 +330,8 @@ const styles = StyleSheet.create({
   },
   brandHeader: {
     paddingHorizontal: 24,
-    paddingTop: 36,
-    paddingBottom: 28,
+    paddingTop: 32,
+    paddingBottom: 24,
   },
   badgeContainer: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -194,7 +339,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: spacing.pillRadius,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   badgeText: {
     color: colors.primaryLight,
@@ -209,10 +354,10 @@ const styles = StyleSheet.create({
     letterSpacing: typography.letterSpacing.tighter,
   },
   brandSubtitle: {
-    fontSize: typography.fontSizes.sm,
+    fontSize: typography.fontSizes.xs,
     color: colors.primaryLight,
     marginTop: 6,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   formCard: {
     flex: 1,
@@ -220,72 +365,190 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
-    paddingTop: 26,
+    paddingTop: 24,
     paddingBottom: 36,
   },
   sectionHeading: {
-    fontSize: typography.fontSizes.md,
+    fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.neutralDark,
+    marginBottom: 14,
+  },
+  roleToggleRow: {
+    flexDirection: 'row',
+    backgroundColor: colors.neutralDivider,
+    borderRadius: 14,
+    padding: 4,
+    marginBottom: 18,
+  },
+  roleToggleTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+  roleToggleTabActive: {
+    backgroundColor: colors.cardSurface,
+    ...elevation.sm,
+  },
+  tabIcon: {
+    marginRight: 6,
+  },
+  roleToggleTabText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.neutralMuted,
+  },
+  roleToggleTabTextActive: {
+    color: colors.primary,
+    fontWeight: typography.fontWeights.bold,
+  },
+  tabContentContainer: {
+    marginTop: 4,
+  },
+  infoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F3F9F5',
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 18,
+  },
+  infoBannerIcon: {
+    marginRight: 10,
+  },
+  infoBannerTextWrap: {
+    flex: 1,
+  },
+  infoBannerTitle: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.primary,
+  },
+  infoBannerSubtitle: {
+    fontSize: 11,
+    color: colors.neutralDark,
+    marginTop: 2,
+    lineHeight: 15,
+  },
+  inputSection: {
+    marginBottom: 18,
+  },
+  inputLabel: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.semibold,
+    color: colors.neutralDark,
+    marginBottom: 6,
+  },
+  primaryActionBtn: {
     marginBottom: 16,
   },
-  roleCard: {
+  demoSection: {
+    backgroundColor: colors.cardSurface,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: colors.neutralBorder,
+    marginTop: 8,
+  },
+  demoSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  demoSectionTitle: {
+    fontSize: 11,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.accentBlue,
+    marginLeft: 6,
+  },
+  demoChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  demoChip: {
+    backgroundColor: colors.primaryLight,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    alignItems: 'center',
+  },
+  demoChipCode: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.extrabold,
+    color: colors.primary,
+  },
+  demoChipName: {
+    fontSize: 10,
+    color: colors.neutralDark,
+    marginTop: 2,
+  },
+  registerShopBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.cardSurface,
-    borderRadius: spacing.cardRadius,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: colors.neutralBorder,
-    marginBottom: 14,
-    minHeight: 88,
-  },
-  roleCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: '#F7FCF9',
-  },
-  roleIconBox: {
-    width: 52,
-    height: 52,
     borderRadius: 14,
-    backgroundColor: colors.neutralDivider,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 14,
+    padding: 14,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    marginBottom: 16,
   },
-  roleIconBoxActive: {
+  registerIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  roleTextBox: {
+  registerTextBox: {
     flex: 1,
   },
-  roleTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  roleTitle: {
-    fontSize: typography.fontSizes.base,
+  registerTitle: {
+    fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.neutralDark,
   },
-  roleDescription: {
-    fontSize: typography.fontSizes.xs,
+  registerSubtitle: {
+    fontSize: 11,
     color: colors.neutralMuted,
-    lineHeight: 17,
+    marginTop: 2,
   },
-  phoneSection: {
-    marginTop: 10,
-    marginBottom: 20,
+  dividerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 14,
   },
-  inputLabel: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.semibold,
-    color: colors.neutralDark,
-    marginBottom: 4,
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.neutralBorder,
   },
-  submitBtn: {
-    marginTop: 8,
+  dividerText: {
+    fontSize: 11,
+    color: colors.neutralLight,
+    paddingHorizontal: 10,
+  },
+  demoOwnerLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+  },
+  inlineIcon: {
+    marginRight: 6,
+  },
+  demoOwnerLinkText: {
+    fontSize: typography.fontSizes.xs,
+    fontWeight: typography.fontWeights.bold,
+    color: colors.accentBlue,
   },
 });

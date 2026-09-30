@@ -1,16 +1,17 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Map, PlayCircle, Cpu, RefreshCw, LogOut, ArrowLeftRight } from 'lucide-react-native';
+import { Map, PlayCircle, Cpu, Users, LogOut, ArrowLeftRight } from 'lucide-react-native';
 import { OwnerLiveMapScreen } from '../screens/owner/OwnerLiveMapScreen';
 import { RoutePlaybackScreen } from '../screens/owner/RoutePlaybackScreen';
 import { LinkTrackerScreen } from '../screens/owner/LinkTrackerScreen';
+import { ManageOfficersScreen } from '../screens/owner/ManageOfficersScreen';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
 import { spacing } from '../theme/spacing';
 
-export type OwnerTabKey = 'live_map' | 'playback' | 'trackers';
+export type OwnerTabKey = 'live_map' | 'playback' | 'team' | 'trackers';
 
 export const OwnerTabsNavigator: React.FC = () => {
   const [activeTab, setActiveTab] = useState<OwnerTabKey>('live_map');
@@ -83,7 +84,7 @@ export const OwnerTabsNavigator: React.FC = () => {
         </View>
       </SafeAreaView>
 
-      {/* Screen Area for the 3 Primary Tabs */}
+      {/* Screen Area for the 4 Primary Tabs */}
       <View style={styles.screenArea}>
         {activeTab === 'live_map' && (
           <OwnerLiveMapScreen onNavigateToPlayback={handleNavigateToPlayback} />
@@ -94,6 +95,7 @@ export const OwnerTabsNavigator: React.FC = () => {
             onBack={() => setActiveTab('live_map')}
           />
         )}
+        {activeTab === 'team' && <ManageOfficersScreen />}
         {activeTab === 'trackers' && <LinkTrackerScreen />}
       </View>
 
@@ -139,6 +141,27 @@ export const OwnerTabsNavigator: React.FC = () => {
               ]}
             >
               Playback
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.tabItem}
+            onPress={() => setActiveTab('team')}
+            activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeTab === 'team' }}
+          >
+            <Users
+              size={22}
+              color={activeTab === 'team' ? colors.primary : colors.neutralLight}
+            />
+            <Text
+              style={[
+                styles.tabLabel,
+                activeTab === 'team' && styles.tabLabelActive,
+              ]}
+            >
+              Team & Codes
             </Text>
           </TouchableOpacity>
 

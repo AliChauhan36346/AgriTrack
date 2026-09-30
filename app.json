@@ -13,7 +13,9 @@
       "supportsTablet": true
     },
     "android": {
+      "package": "com.agriroute.app",
       "adaptiveIcon": {
+        "foregroundImage": "./src/assets/adaptive-icon.png",
         "backgroundColor": "#0F5132"
       },
       "permissions": [
@@ -31,6 +33,11 @@
     "plugins": [
       "expo-sqlite",
       "react-native-background-geolocation"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1f0809ea-9c8a-4af9-b6da-9e6744c32ef9"
+      }
+    }
   }
 }

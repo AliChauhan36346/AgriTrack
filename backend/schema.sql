@@ -10,6 +10,8 @@ CREATE EXTENSION IF NOT EXISTS "postgis";
 -- 2. Create Enumerated Check Constraints & Officers Table
 CREATE TABLE IF NOT EXISTS officers (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    access_code VARCHAR(16) UNIQUE,
+    owner_id UUID,
     full_name VARCHAR(255) NOT NULL,
     phone VARCHAR(32) NOT NULL,
     assigned_territory VARCHAR(255) NOT NULL,

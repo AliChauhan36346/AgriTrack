@@ -14,6 +14,8 @@ import {
 export const MOCK_OFFICERS: FieldOfficer[] = [
   {
     id: 'off-01',
+    accessCode: 'FO-101',
+    ownerId: 'owner-01',
     fullName: 'Muhammad Tariq',
     name: 'Muhammad Tariq',
     roleTitle: 'Senior Agronomist (Zari Mahir)',
@@ -41,6 +43,8 @@ export const MOCK_OFFICERS: FieldOfficer[] = [
   },
   {
     id: 'off-02',
+    accessCode: 'FO-102',
+    ownerId: 'owner-01',
     fullName: 'Zahid Mehmood',
     name: 'Zahid Mehmood',
     roleTitle: 'Field Extension Officer (Zari Muawin)',
@@ -67,6 +71,8 @@ export const MOCK_OFFICERS: FieldOfficer[] = [
   },
   {
     id: 'off-03',
+    accessCode: 'FO-103',
+    ownerId: 'owner-01',
     fullName: 'Farhan Ali',
     name: 'Farhan Ali',
     roleTitle: 'Fertilizer & Chemical Inspector',
@@ -94,6 +100,8 @@ export const MOCK_OFFICERS: FieldOfficer[] = [
   },
   {
     id: 'off-04',
+    accessCode: 'FO-104',
+    ownerId: 'owner-01',
     fullName: 'Kamran Shahzad',
     name: 'Kamran Shahzad',
     roleTitle: 'Crop Protection Specialist (Tahaffuz-e-Fasl)',

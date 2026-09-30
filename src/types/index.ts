@@ -33,6 +33,16 @@ export interface BreadcrumbPoint {
 // Backward-compatible alias
 export type Breadcrumb = BreadcrumbPoint;
 
+export interface ShopOwnerAccount {
+  id: string;
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  email?: string;
+  city: string;
+  createdAt: string;
+}
+
 export interface FieldOfficer {
   id: string;
   fullName: string;
@@ -51,6 +61,9 @@ export interface FieldOfficer {
   };
   hasHardwareTracker: boolean;
   trackerImei?: string;
+  accessCode: string; // Unique login code (e.g. 'FO-101', 'FO-4892')
+  ownerId?: string; // ID of shop owner who registered this officer
+  email?: string;
   
   // Backward compatibility fields
   name?: string;
