@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { X, Store, User, Phone, MapPin, Mail, ArrowRight } from 'lucide-react-native';
+import { X, Store, User, Phone, MapPin, Mail, ArrowRight, Lock } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -34,6 +34,7 @@ export const OwnerRegisterModal: React.FC<OwnerRegisterModalProps> = ({
   const [shopName, setShopName] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [phone, setPhone] = useState('');
+  const [pin, setPin] = useState('');
   const [city, setCity] = useState('');
   const [email, setEmail] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -50,6 +51,9 @@ export const OwnerRegisterModal: React.FC<OwnerRegisterModalProps> = ({
     if (!phone.trim() || phone.trim().length < 10) {
       newErrors.phone = 'درست موبائل نمبر درج کریں (Valid mobile number required)';
     }
+    if (!pin.trim() || pin.trim().length !== 4) {
+      newErrors.pin = '4 ہندسوں کا سیکیورٹی پن درج کریں (4-digit security PIN required)';
+    }
     if (!city.trim()) {
       newErrors.city = 'شہر / ضلع درج کریں (City is required)';
     }
@@ -61,12 +65,13 @@ export const OwnerRegisterModal: React.FC<OwnerRegisterModalProps> = ({
     if (!validate()) return;
 
     setIsSubmitting(true);
-    await new Promise((r) => setTimeout(r, 400));
+    await new Promise((r) => setTimeout(r, 300));
 
-    registerShopOwner({
+    await registerShopOwner({
       shopName: shopName.trim(),
       ownerName: ownerName.trim(),
       phone: phone.trim(),
+      pin: pin.trim(),
       email: email.trim() || undefined,
       city: city.trim(),
     });
@@ -152,6 +157,25 @@ export const OwnerRegisterModal: React.FC<OwnerRegisterModalProps> = ({
                 keyboardType="phone-pad"
                 leftIcon={<Phone size={18} color={colors.neutralMuted} />}
                 error={errors.phone}
+              />
+            </View>
+
+            {/* 4-Digit Security PIN */}
+            <View style={styles.fieldGroup}>
+              <Text style={styles.label}>اکاؤنٹ سیکیورٹی پن (4-Digit Login PIN) *</Text>
+              <Input
+                placeholder="مثال: 1234 (لاگ ان کے لیے 4 ہندسے)"
+                value={pin}
+                onChangeText={(val) => {
+                  setPin(val.replace(/[^0-9]/g, ''));
+                  if (errors.pin) setErrors((prev) => ({ ...prev, pin: '' }));
+                }}
+                keyboardType="number-pad"
+                maxLength={4}
+                secureTextEntry
+                leftIcon={<Lock size={18} color={colors.neutralMuted} />}
+                error={errors.pin}
+                helperText="یہ پن آپ کے فون نمبر کے ساتھ لاگ ان کے لیے استعمال ہوگا"
               />
             </View>
 

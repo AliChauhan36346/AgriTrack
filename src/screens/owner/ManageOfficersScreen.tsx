@@ -24,6 +24,8 @@ import {
   X,
   Store,
   KeyRound,
+  Clock,
+  Navigation,
 } from 'lucide-react-native';
 import { useAuthStore } from '../../store/authStore';
 import { FieldOfficer } from '../../types';
@@ -41,6 +43,12 @@ export const ManageOfficersScreen: React.FC = () => {
   const addFieldOfficer = useAuthStore((state) => state.addFieldOfficer);
   const deleteFieldOfficer = useAuthStore((state) => state.deleteFieldOfficer);
 
+  // Scope to current shop owner
+  const myOfficers = React.useMemo(() => {
+    if (!currentOwner) return registeredOfficers.filter((o) => !o.id.startsWith('off-0'));
+    return registeredOfficers.filter((o) => o.ownerId === currentOwner.id);
+  }, [registeredOfficers, currentOwner]);
+
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [createdCodeModal, setCreatedCodeModal] = useState<{
     officer: FieldOfficer;
@@ -52,6 +60,8 @@ export const ManageOfficersScreen: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [territory, setTerritory] = useState('');
   const [email, setEmail] = useState('');
+  const [shiftStart, setShiftStart] = useState('09:00 AM');
+  const [shiftEnd, setShiftEnd] = useState('06:00 PM');
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   const validate = () => {
@@ -65,14 +75,27 @@ export const ManageOfficersScreen: React.FC = () => {
     return Object.keys(errs).length === 0;
   };
 
-  const handleCreateOfficer = () => {
+  const convertTo24h = (time12: string) => {
+    const parts = time12.split(' ');
+    const time = parts[0] || '09:00';
+    const modifier = parts[1] || 'AM';
+    let [hours, minutes] = time.split(':').map(Number);
+    if (modifier === 'PM' && hours < 12) hours += 12;
+    if (modifier === 'AM' && hours === 12) hours = 0;
+    return `${String(hours || 0).padStart(2, '0')}:${String(minutes || 0).padStart(2, '0')}`;
+  };
+
+  const handleCreateOfficer = async () => {
     if (!validate()) return;
 
-    const result = addFieldOfficer({
+    const result = await addFieldOfficer({
       fullName: fullName.trim(),
       phone: phone.trim(),
       assignedTerritory: territory.trim(),
       email: email.trim() || undefined,
+      shiftStartTime: convertTo24h(shiftStart),
+      shiftEndTime: convertTo24h(shiftEnd),
+      workingHoursDisplay: `${shiftStart} - ${shiftEnd}`,
     });
 
     // Reset form
@@ -80,6 +103,8 @@ export const ManageOfficersScreen: React.FC = () => {
     setPhone('');
     setTerritory('');
     setEmail('');
+    setShiftStart('09:00 AM');
+    setShiftEnd('06:00 PM');
     setFormErrors({});
     setIsAddModalVisible(false);
 
@@ -128,6 +153,23 @@ export const ManageOfficersScreen: React.FC = () => {
             </View>
           </View>
           <StatusBadge status={item.currentStatus || 'offline'} />
+        </View>
+
+        {/* Working Hours & Kilometers Summary */}
+        <View style={styles.metricsRow}>
+          <View style={styles.metricPill}>
+            <Clock size={12} color={colors.primary} />
+            <Text style={styles.metricPillText}>
+              {item.workingHoursDisplay || '09:00 AM - 06:00 PM'}
+            </Text>
+          </View>
+
+          <View style={[styles.metricPill, styles.distancePill]}>
+            <Navigation size={12} color={colors.accentBlue} />
+            <Text style={[styles.metricPillText, styles.distancePillText]}>
+              {item.todayDistanceKm || 0} km Done Today (فاصلہ)
+            </Text>
+          </View>
         </View>
 
         {/* Access Code Highlight Section */}
@@ -190,7 +232,7 @@ export const ManageOfficersScreen: React.FC = () => {
             {currentOwner?.shopName || 'المدینہ زرعی مرکز (Al-Madina Zari Markaz)'}
           </Text>
           <Text style={styles.shopSubtitle}>
-            مالک: {currentOwner?.ownerName || 'Haji Abdul Rasheed'} • {currentOwner?.city || 'ملتان'}
+            مالک: {currentOwner?.ownerName || 'Shop Owner'} • {currentOwner?.city || 'پاکستان'}
           </Text>
         </View>
       </View>
@@ -200,7 +242,7 @@ export const ManageOfficersScreen: React.FC = () => {
         <View>
           <Text style={styles.sectionTitle}>فیلڈ آفیسرز کی فہرست (Field Officers)</Text>
           <Text style={styles.sectionSubtitle}>
-            کل آفیسرز: {registeredOfficers.length} | کوڈ سے فوری لاگ ان
+            کل آفیسرز: {myOfficers.length} | خودکار GPS ٹریکنگ
           </Text>
         </View>
 
@@ -216,7 +258,7 @@ export const ManageOfficersScreen: React.FC = () => {
 
       {/* Officers List */}
       <FlatList
-        data={registeredOfficers}
+        data={myOfficers}
         keyExtractor={(item) => item.id}
         renderItem={renderOfficerItem}
         contentContainerStyle={styles.listContent}
@@ -224,10 +266,18 @@ export const ManageOfficersScreen: React.FC = () => {
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Users size={48} color={colors.neutralLight} />
-            <Text style={styles.emptyTitle}>کوئی فیلڈ آفیسر شامل نہیں ہے</Text>
+            <Text style={styles.emptyTitle}>کوئی فیلڈ آفیسر شامل نہیں ہے (No Officers Yet)</Text>
             <Text style={styles.emptySubtitle}>
-              اوپر والے بٹن پر کلک کر کے نیا فیلڈ آفیسر اور اس کا کوڈ بنائیں
+              اپنے فیلڈ آفیسرز کو شامل کریں، ان کے ڈیوٹی اوقات مقرر کریں اور لاگ ان رسائی کوڈ شیئر کریں۔ مقررہ اوقات میں ایپ خود بخود ٹریکنگ کرے گی۔
             </Text>
+            <TouchableOpacity
+              style={styles.emptyAddBtn}
+              onPress={() => setIsAddModalVisible(true)}
+              activeOpacity={0.8}
+            >
+              <UserPlus size={16} color="#FFFFFF" style={{ marginRight: 6 }} />
+              <Text style={styles.emptyAddBtnText}>+ نیا فیلڈ آفیسر شامل کریں</Text>
+            </TouchableOpacity>
           </View>
         }
       />
@@ -245,7 +295,7 @@ export const ManageOfficersScreen: React.FC = () => {
               <View>
                 <Text style={styles.modalHeading}>نیا فیلڈ آفیسر شامل کریں</Text>
                 <Text style={styles.modalSubheading}>
-                  سیستم خود بخود منفرد رسائی کوڈ (Access Code) تیار کرے گا
+                  سیستم خود بخود منفرد رسائی کوڈ اور خودکار شفٹ ٹریکنگ فعال کرے گا
                 </Text>
               </View>
               <TouchableOpacity
@@ -307,6 +357,76 @@ export const ManageOfficersScreen: React.FC = () => {
                   onChangeText={setEmail}
                   keyboardType="email-address"
                 />
+              </View>
+
+              {/* Working Hours / Shift Schedule Input Group */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  ڈیوٹی کے اوقات (Working Hours / Shift Schedule) *
+                </Text>
+                <Text style={styles.inputHelper}>
+                  اس دوران ایپ خود بخود آفیسر کی لوکیشن اور طے شدہ فاصلہ ریکارڈ کرے گی
+                </Text>
+
+                {/* Shift Start Time */}
+                <Text style={[styles.subInputLabel, { marginTop: 6 }]}>
+                  شفت شروع ہونے کا وقت (Shift Start Time)
+                </Text>
+                <View style={styles.timeChipsRow}>
+                  {['08:00 AM', '09:00 AM', '10:00 AM'].map((time) => (
+                    <TouchableOpacity
+                      key={time}
+                      onPress={() => setShiftStart(time)}
+                      style={[
+                        styles.timeChip,
+                        shiftStart === time && styles.timeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.timeChipText,
+                          shiftStart === time && styles.timeChipTextActive,
+                        ]}
+                      >
+                        {time}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Shift End Time */}
+                <Text style={[styles.subInputLabel, { marginTop: 10 }]}>
+                  شفت ختم ہونے کا وقت (Shift End Time)
+                </Text>
+                <View style={styles.timeChipsRow}>
+                  {['05:00 PM', '06:00 PM', '07:00 PM', '08:00 PM'].map((time) => (
+                    <TouchableOpacity
+                      key={time}
+                      onPress={() => setShiftEnd(time)}
+                      style={[
+                        styles.timeChip,
+                        shiftEnd === time && styles.timeChipActive,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.timeChipText,
+                          shiftEnd === time && styles.timeChipTextActive,
+                        ]}
+                      >
+                        {time}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* Active Schedule Preview */}
+                <View style={styles.schedulePreviewBox}>
+                  <Clock size={14} color={colors.primary} />
+                  <Text style={styles.schedulePreviewText}>
+                    مقررہ ڈیوٹی: {shiftStart} تا {shiftEnd} (خودکار GPS ٹریکنگ فعال ہو گی)
+                  </Text>
+                </View>
               </View>
 
               <Button
@@ -693,5 +813,105 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.bold,
     color: colors.neutralMuted,
+  },
+  metricsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  metricPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    marginRight: 6,
+    marginBottom: 4,
+  },
+  distancePill: {
+    backgroundColor: '#EFF6FF',
+  },
+  metricPillText: {
+    fontSize: 11,
+    color: colors.neutralDark,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  distancePillText: {
+    color: colors.accentBlue,
+    fontWeight: '700',
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 14,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  inputHelper: {
+    fontSize: 11,
+    color: colors.neutralMuted,
+    marginBottom: 6,
+  },
+  subInputLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.neutralDark,
+    marginBottom: 4,
+  },
+  timeChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 4,
+  },
+  timeChip: {
+    backgroundColor: colors.surfaceLight,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.neutralBorder,
+    marginRight: 6,
+    marginBottom: 6,
+  },
+  timeChipActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  timeChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.neutralDark,
+  },
+  timeChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  schedulePreviewBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  schedulePreviewText: {
+    fontSize: 11,
+    color: colors.primary,
+    fontWeight: '700',
+    marginLeft: 6,
+    flex: 1,
   },
 });

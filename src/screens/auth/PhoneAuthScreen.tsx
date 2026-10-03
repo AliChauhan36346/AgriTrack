@@ -33,7 +33,6 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
   const phoneNumber = useAuthStore((state) => state.phoneNumber);
   const selectedRole = useAuthStore((state) => state.selectedRole);
   const loginAs = useAuthStore((state) => state.loginAs);
-  const verifyOtp = useAuthStore((state) => state.verifyOtp);
   const isLoading = useAuthStore((state) => state.isLoading);
   const authError = useAuthStore((state) => state.error);
 

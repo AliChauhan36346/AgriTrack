@@ -38,6 +38,7 @@ export interface ShopOwnerAccount {
   shopName: string;
   ownerName: string;
   phone: string;
+  pin: string; // 4-digit security PIN for owner login
   email?: string;
   city: string;
   createdAt: string;
@@ -65,6 +66,11 @@ export interface FieldOfficer {
   ownerId?: string; // ID of shop owner who registered this officer
   email?: string;
   
+  // Working Hours & Shift Schedule (set by Shop Owner)
+  shiftStartTime?: string; // e.g. "09:00"
+  shiftEndTime?: string;   // e.g. "18:00"
+  workingHoursDisplay?: string; // e.g. "09:00 AM - 06:00 PM"
+
   // Backward compatibility fields
   name?: string;
   roleTitle?: string;

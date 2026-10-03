@@ -17,8 +17,8 @@ import {
   ArrowRight,
   KeyRound,
   Store,
-  Sparkles,
   Phone,
+  Lock,
 } from 'lucide-react-native';
 import { UserRole } from '../../types';
 import { useAuthStore } from '../../store/authStore';
@@ -30,29 +30,22 @@ import { typography } from '../../theme/typography';
 import { spacing } from '../../theme/spacing';
 import { elevation } from '../../theme/elevation';
 
-interface RoleSelectScreenProps {
-  onContinueToOtp?: () => void;
-}
-
-export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueToOtp }) => {
+export const RoleSelectScreen: React.FC = () => {
   const selectedRole = useAuthStore((state) => state.selectedRole);
   const setSelectedRole = useAuthStore((state) => state.setSelectedRole);
   const loginWithAccessCode = useAuthStore((state) => state.loginWithAccessCode);
-  const loginAs = useAuthStore((state) => state.loginAs);
+  const loginOwnerWithPhoneAndPin = useAuthStore((state) => state.loginOwnerWithPhoneAndPin);
   const authError = useAuthStore((state) => state.error);
-  const registeredOfficers = useAuthStore((state) => state.registeredOfficers);
-  const phoneNumber = useAuthStore((state) => state.phoneNumber);
-  const setPhoneNumber = useAuthStore((state) => state.setPhoneNumber);
-  const requestOtp = useAuthStore((state) => state.requestOtp);
   const isLoading = useAuthStore((state) => state.isLoading);
 
   // Field Officer Code State
   const [accessCodeInput, setAccessCodeInput] = useState('');
   const [officerError, setOfficerError] = useState<string | null>(null);
 
-  // Owner Phone State
-  const [ownerPhoneInput, setOwnerPhoneInput] = useState(phoneNumber);
-  const [ownerPhoneError, setOwnerPhoneError] = useState<string | null>(null);
+  // Owner Phone & PIN State
+  const [ownerPhoneInput, setOwnerPhoneInput] = useState('');
+  const [ownerPinInput, setOwnerPinInput] = useState('');
+  const [ownerError, setOwnerError] = useState<string | null>(null);
 
   // Owner Register Modal State
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
@@ -60,43 +53,41 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
   const handleRoleSelect = (role: UserRole) => {
     setSelectedRole(role);
     setOfficerError(null);
-    setOwnerPhoneError(null);
+    setOwnerError(null);
   };
 
-  const handleOfficerLogin = (codeToUse?: string) => {
-    const code = codeToUse || accessCodeInput;
-    if (!code.trim()) {
+  const handleOfficerLogin = async () => {
+    if (!accessCodeInput.trim()) {
       setOfficerError('براہ کرم اپنا آفیسر رسائی کوڈ درج کریں (Please enter your access code)');
       return;
     }
     setOfficerError(null);
-    const result = loginWithAccessCode(code);
+    const result = await loginWithAccessCode(accessCodeInput);
     if (!result.success && result.error) {
       setOfficerError(result.error);
     }
   };
 
-  const handleOwnerPhoneLogin = async () => {
+  const handleOwnerLogin = async () => {
     if (ownerPhoneInput.trim().length < 10) {
-      setOwnerPhoneError('درست 10 ہندسوں کا موبائل نمبر درج کریں');
+      setOwnerError('درست موبائل نمبر درج کریں (Enter valid mobile number)');
       return;
     }
-    setOwnerPhoneError(null);
-    setPhoneNumber(ownerPhoneInput);
-    const success = await requestOtp(ownerPhoneInput);
-    if (success) {
-      onContinueToOtp?.();
+    if (!ownerPinInput.trim() || ownerPinInput.trim().length !== 4) {
+      setOwnerError('درست 4 ہندسوں کا سیکیورٹی پن درج کریں (Enter 4-digit PIN)');
+      return;
     }
-  };
-
-  const handleDemoOwnerLogin = () => {
-    loginAs('owner');
+    setOwnerError(null);
+    const result = await loginOwnerWithPhoneAndPin(ownerPhoneInput, ownerPinInput);
+    if (!result.success && result.error) {
+      setOwnerError(result.error);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
-      
+
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -260,7 +251,7 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
                     آفیسر رسائی کوڈ درج کریں (Officer Access Code) *
                   </Text>
                   <Input
-                    placeholder="مثال: FO-101 یا FO-4892"
+                    placeholder="مثال: FO-4892"
                     value={accessCodeInput}
                     onChangeText={(val) => {
                       setAccessCodeInput(val.toUpperCase());
@@ -276,44 +267,17 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
                 {/* Submit Officer Login Button */}
                 <Button
                   title="شفت شروع کریں (Enter Shift / Login)"
-                  onPress={() => handleOfficerLogin()}
+                  onPress={handleOfficerLogin}
+                  isLoading={isLoading}
                   size="lg"
                   rightIcon={<ArrowRight size={20} color={colors.cardSurface} />}
                   style={styles.primaryActionBtn}
                 />
-
-                {/* Quick Demo Officer Codes for Immediate Testing */}
-                <View style={styles.demoSection}>
-                  <View style={styles.demoSectionHeader}>
-                    <Sparkles size={14} color={colors.accentBlue} />
-                    <Text style={styles.demoSectionTitle}>
-                      ٹیسٹنگ کے لیے کلک کریں (Quick Demo Codes):
-                    </Text>
-                  </View>
-                  <View style={styles.demoChipsRow}>
-                    {registeredOfficers.slice(0, 3).map((off) => (
-                      <TouchableOpacity
-                        key={off.id}
-                        style={styles.demoChip}
-                        onPress={() => {
-                          setAccessCodeInput(off.accessCode);
-                          handleOfficerLogin(off.accessCode);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.demoChipCode}>{off.accessCode}</Text>
-                        <Text style={styles.demoChipName}>
-                          {off.fullName.split(' ')[0]} ({off.assignedTerritory.split(' ')[0]})
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
               </View>
             )}
 
             {/* ========================================================================= */}
-            {/* TAB 2: SHOP OWNER - REGISTER NEW SHOP OR LOGIN                           */}
+            {/* TAB 2: SHOP OWNER - PHONE + 4-DIGIT PIN LOGIN OR REGISTER                 */}
             {/* ========================================================================= */}
             {selectedRole === 'owner' && (
               <View style={styles.tabContentContainer}>
@@ -327,7 +291,7 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
                   </View>
                 </View>
 
-                {/* Button A: Register New Shop Account */}
+                {/* Button: Register New Shop Account */}
                 <TouchableOpacity
                   style={[styles.registerShopBtn, elevation.sm]}
                   onPress={() => setIsRegisterModalOpen(true)}
@@ -351,42 +315,48 @@ export const RoleSelectScreen: React.FC<RoleSelectScreenProps> = ({ onContinueTo
                   <View style={styles.dividerLine} />
                 </View>
 
-                {/* Mobile Phone Input for Existing Owner */}
+                {/* Mobile Phone Input */}
                 <View style={styles.inputSection}>
-                  <Text style={styles.inputLabel}>دکان مالک کا موبائل نمبر (Mobile Number)</Text>
+                  <Text style={styles.inputLabel}>دکان مالک کا موبائل نمبر (Mobile Number) *</Text>
                   <Input
-                    placeholder="0300 8765432"
+                    placeholder="0300 1234567"
                     value={ownerPhoneInput}
                     onChangeText={(text) => {
                       setOwnerPhoneInput(text);
-                      if (ownerPhoneError) setOwnerPhoneError(null);
+                      if (ownerError) setOwnerError(null);
                     }}
                     keyboardType="phone-pad"
                     maxLength={15}
                     leftIcon={<Phone size={18} color={colors.neutralMuted} />}
-                    error={ownerPhoneError || undefined}
+                  />
+                </View>
+
+                {/* 4-Digit Security PIN */}
+                <View style={styles.inputSection}>
+                  <Text style={styles.inputLabel}>4 ہندسوں کا سیکیورٹی پن (4-Digit PIN) *</Text>
+                  <Input
+                    placeholder="****"
+                    value={ownerPinInput}
+                    onChangeText={(text) => {
+                      setOwnerPinInput(text.replace(/[^0-9]/g, ''));
+                      if (ownerError) setOwnerError(null);
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={4}
+                    secureTextEntry
+                    leftIcon={<Lock size={18} color={colors.neutralMuted} />}
+                    error={ownerError || authError || undefined}
                   />
                 </View>
 
                 <Button
-                  title="او ٹی پی حاصل کریں (Send Verification OTP)"
-                  onPress={handleOwnerPhoneLogin}
+                  title="لاگ ان کریں (Sign In to Shop Portal)"
+                  onPress={handleOwnerLogin}
                   isLoading={isLoading}
                   size="lg"
+                  rightIcon={<ArrowRight size={20} color={colors.cardSurface} />}
                   style={styles.primaryActionBtn}
                 />
-
-                {/* Demo Owner Shortcut */}
-                <TouchableOpacity
-                  style={styles.demoOwnerLink}
-                  onPress={handleDemoOwnerLogin}
-                  activeOpacity={0.7}
-                >
-                  <Sparkles size={15} color={colors.accentBlue} style={styles.inlineIcon} />
-                  <Text style={styles.demoOwnerLinkText}>
-                    ڈیمو دکان مالک لاگ ان کریں (المدینہ زرعی مرکز)
-                  </Text>
-                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -413,7 +383,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 220, // generous bottom padding so keyboard never hides content
+    paddingBottom: 220,
   },
   brandHeader: {
     paddingHorizontal: 24,
@@ -462,9 +432,7 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
-  /* ========================================================================= */
-  /* HIGH-CONTRAST ROLE SELECTION CARDS                                       */
-  /* ========================================================================= */
+  /* High-Contrast Role Selection Cards */
   roleCardRow: {
     flexDirection: 'row',
     gap: 12,
@@ -478,13 +446,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   roleCardActive: {
-    backgroundColor: colors.primary, // Rich solid green (#0F5132)
+    backgroundColor: colors.primary,
     borderWidth: 2.5,
     borderColor: '#0B3D25',
     ...elevation.md,
   },
   roleCardInactive: {
-    backgroundColor: colors.cardSurface, // White
+    backgroundColor: colors.cardSurface,
     borderWidth: 1.5,
     borderColor: colors.neutralBorder,
     ...elevation.sm,
@@ -550,9 +518,7 @@ const styles = StyleSheet.create({
     color: colors.neutralMuted,
   },
 
-  /* ========================================================================= */
-  /* TAB CONTENT                                                              */
-  /* ========================================================================= */
+  /* Tab Content */
   tabContentContainer: {
     marginTop: 4,
   },
@@ -584,7 +550,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   inputSection: {
-    marginBottom: 18,
+    marginBottom: 16,
   },
   inputLabel: {
     fontSize: typography.fontSizes.xs,
@@ -593,50 +559,8 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   primaryActionBtn: {
-    marginBottom: 16,
-  },
-  demoSection: {
-    backgroundColor: colors.cardSurface,
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.neutralBorder,
     marginTop: 8,
-  },
-  demoSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  demoSectionTitle: {
-    fontSize: 11,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.accentBlue,
-    marginLeft: 6,
-  },
-  demoChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  demoChip: {
-    backgroundColor: colors.primaryLight,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    alignItems: 'center',
-  },
-  demoChipCode: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.extrabold,
-    color: colors.primary,
-  },
-  demoChipName: {
-    fontSize: 10,
-    color: colors.neutralDark,
-    marginTop: 2,
+    marginBottom: 16,
   },
   registerShopBtn: {
     flexDirection: 'row',
@@ -684,19 +608,5 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: colors.neutralLight,
     paddingHorizontal: 10,
-  },
-  demoOwnerLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-  },
-  inlineIcon: {
-    marginRight: 6,
-  },
-  demoOwnerLinkText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.accentBlue,
   },
 });

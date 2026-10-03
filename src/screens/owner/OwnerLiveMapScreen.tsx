@@ -1,129 +1,170 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
-  StatusBar,
   Dimensions,
+  Linking,
+  Modal,
+  FlatList,
+  StatusBar,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
   Users,
-  ChevronUp,
-  ChevronDown,
-  Navigation,
   PlayCircle,
   Phone,
+  ChevronLeft,
+  ChevronRight,
+  List,
+  X,
+  Navigation,
+  Clock,
+  MapPin,
   Cpu,
+  UserPlus,
 } from 'lucide-react-native';
 import { MapFilterType, FieldOfficer } from '../../types';
-import { MOCK_OFFICERS } from '../../mockData';
+import { useAuthStore } from '../../store/authStore';
 import { useFilterStore } from '../../store/filterStore';
+import { subscribeToLiveFleet, fetchOfficersFromCloud } from '../../services/supabase';
 import { MapContainer } from '../../components/map/MapContainer';
-import { LiveMarker } from '../../components/map/LiveMarker';
-import { OfflineMarker } from '../../components/map/OfflineMarker';
 import { StatusBadge } from '../../components/ui/StatusBadge';
 import { BatteryIndicator } from '../../components/feedback/BatteryIndicator';
 import { colors } from '../../theme/colors';
 import { typography } from '../../theme/typography';
-import { spacing } from '../../theme/spacing';
 import { elevation } from '../../theme/elevation';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 interface OwnerLiveMapScreenProps {
   onNavigateToPlayback?: (officerId: string) => void;
+  onNavigateToTeam?: () => void;
 }
-
-// Marker positioning helper across map coordinates
-const OFFICER_PIN_COORDS: Record<string, { top?: number; left?: number; right?: number; bottom?: number }> = {
-  'off-01': { top: 90, left: 60 },
-  'off-02': { top: 160, right: 80 },
-  'off-03': { bottom: 130, left: 100 },
-  'off-04': { top: 70, right: 30 },
-};
 
 export const OwnerLiveMapScreen: React.FC<OwnerLiveMapScreenProps> = ({
   onNavigateToPlayback,
+  onNavigateToTeam,
 }) => {
+  const currentOwner = useAuthStore((state) => state.currentOwner);
+  const registeredOfficers = useAuthStore((state) => state.registeredOfficers);
+
+  // Subscribe to real-time live fleet tracking from Supabase Cloud
+  useEffect(() => {
+    if (!currentOwner) return;
+
+    // Load any existing officers from cloud
+    fetchOfficersFromCloud(currentOwner.id).then((cloudOfficers) => {
+      if (cloudOfficers && cloudOfficers.length > 0) {
+        useAuthStore.getState().mergeOfficersFromCloud(cloudOfficers);
+      }
+    });
+
+    // Subscribe to live WebSocket position updates
+    const unsubscribe = subscribeToLiveFleet(currentOwner.id, (updatedOfficer) => {
+      useAuthStore.getState().updateOfficerFromCloudPayload(updatedOfficer);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [currentOwner?.id]);
+
+  // Scope officers exclusively to the current shop owner
+  const ownerOfficers = useMemo(() => {
+    if (!currentOwner) return registeredOfficers.filter((o) => !o.id.startsWith('off-0'));
+    return registeredOfficers.filter((o) => o.ownerId === currentOwner.id);
+  }, [registeredOfficers, currentOwner]);
+
   const activeFilter = useFilterStore((state) => state.activeFilter);
   const setFilter = useFilterStore((state) => state.setFilter);
   const selectedOfficerId = useFilterStore((state) => state.selectedOfficerId);
   const setSelectedOfficerId = useFilterStore((state) => state.setSelectedOfficerId);
-  const isDrawerExpanded = useFilterStore((state) => state.isDrawerExpanded);
-  const toggleDrawer = useFilterStore((state) => state.toggleDrawer);
+
+  // Quick fleet sheet modal state
+  const [showListModal, setShowListModal] = useState(false);
 
   const filteredOfficers = useMemo(() => {
     switch (activeFilter) {
       case 'active':
-        return MOCK_OFFICERS.filter(
+        return ownerOfficers.filter(
           (o) => o.currentStatus === 'active' || o.currentStatus === 'stationary'
         );
       case 'offline':
-        return MOCK_OFFICERS.filter((o) => o.currentStatus === 'offline');
+        return ownerOfficers.filter((o) => o.currentStatus === 'offline');
       case 'all':
       default:
-        return MOCK_OFFICERS;
+        return ownerOfficers;
     }
-  }, [activeFilter]);
+  }, [ownerOfficers, activeFilter]);
 
   const selectedOfficer = useMemo(() => {
-    return MOCK_OFFICERS.find((o) => o.id === selectedOfficerId) ?? MOCK_OFFICERS[0];
-  }, [selectedOfficerId]);
+    if (ownerOfficers.length === 0) return null;
+    return (
+      filteredOfficers.find((o) => o.id === selectedOfficerId) ??
+      filteredOfficers[0] ??
+      ownerOfficers[0]
+    );
+  }, [selectedOfficerId, filteredOfficers, ownerOfficers]);
+
+  // Index of currently selected officer in filtered list
+  const selectedIndex = useMemo(() => {
+    if (!selectedOfficer || filteredOfficers.length === 0) return 0;
+    const idx = filteredOfficers.findIndex((o) => o.id === selectedOfficer.id);
+    return idx >= 0 ? idx : 0;
+  }, [filteredOfficers, selectedOfficer]);
+
+  const handlePrevOfficer = () => {
+    if (filteredOfficers.length === 0) return;
+    const prevIdx = (selectedIndex - 1 + filteredOfficers.length) % filteredOfficers.length;
+    setSelectedOfficerId(filteredOfficers[prevIdx].id);
+  };
+
+  const handleNextOfficer = () => {
+    if (filteredOfficers.length === 0) return;
+    const nextIdx = (selectedIndex + 1) % filteredOfficers.length;
+    setSelectedOfficerId(filteredOfficers[nextIdx].id);
+  };
+
+  const handleCallOfficer = (phone?: string) => {
+    if (phone) {
+      Linking.openURL(`tel:${phone}`).catch(() => {});
+    }
+  };
 
   const filterTabs: Array<{ id: MapFilterType; label: string; count: number }> = [
-    { id: 'all', label: 'All Fleet', count: MOCK_OFFICERS.length },
+    { id: 'all', label: 'All Fleet', count: ownerOfficers.length },
     {
       id: 'active',
       label: 'Active',
-      count: MOCK_OFFICERS.filter(
+      count: ownerOfficers.filter(
         (o) => o.currentStatus === 'active' || o.currentStatus === 'stationary'
       ).length,
     },
     {
       id: 'offline',
       label: 'Offline',
-      count: MOCK_OFFICERS.filter((o) => o.currentStatus === 'offline').length,
+      count: ownerOfficers.filter((o) => o.currentStatus === 'offline').length,
     },
   ];
 
+  const mapHeight = SCREEN_HEIGHT * 0.76;
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="dark-content" backgroundColor={colors.surfaceLight} />
+      <StatusBar barStyle="dark-content" backgroundColor="#F1F5E9" />
 
       <View style={styles.container}>
-        {/* Fullscreen Map Area Rendering MOCK_OFFICERS Markers */}
-        <MapContainer height={SCREEN_HEIGHT * 0.58}>
-          {filteredOfficers.map((officer) => {
-            const isSelected = selectedOfficerId === officer.id;
-            const pos = OFFICER_PIN_COORDS[officer.id] ?? { top: 120, left: 120 };
+        {/* Real Interactive OpenStreetMap & Leaflet Map */}
+        <MapContainer
+          height={mapHeight}
+          officers={filteredOfficers}
+          selectedOfficerId={selectedOfficer?.id}
+          onOfficerSelect={setSelectedOfficerId}
+        />
 
-            return (
-              <View key={officer.id} style={[styles.markerWrapper, pos]}>
-                <TouchableOpacity onPress={() => setSelectedOfficerId(officer.id)}>
-                  {officer.currentStatus === 'offline' ? (
-                    <OfflineMarker
-                      name={officer.fullName}
-                      lastPingTime={officer.lastSeenAt}
-                      isSelected={isSelected}
-                    />
-                  ) : (
-                    <LiveMarker
-                      name={officer.fullName}
-                      speed={officer.speedKmh}
-                      heading={officer.currentLocation.heading ?? 45}
-                      isSelected={isSelected}
-                    />
-                  )}
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </MapContainer>
-
-        {/* Floating Filter Pills Bar (Top of Map) */}
+        {/* Floating Filter Pills Header (Top of Map - Uber / Careem style) */}
         <View style={styles.floatingHeader}>
           <View style={[styles.pillBar, elevation.md]}>
             {filterTabs.map((tab) => {
@@ -148,132 +189,224 @@ export const OwnerLiveMapScreen: React.FC<OwnerLiveMapScreenProps> = ({
                 </TouchableOpacity>
               );
             })}
+
+            {/* Quick Fleet List Icon Button */}
+            <TouchableOpacity
+              style={styles.listToggleBtn}
+              onPress={() => setShowListModal(true)}
+              activeOpacity={0.7}
+              accessibilityLabel="View officer directory"
+            >
+              <List size={18} color={colors.neutralDark} />
+            </TouchableOpacity>
           </View>
         </View>
 
-        {/* Bottom Sheet Drawer for Officer List */}
-        <View
-          style={[
-            styles.bottomDrawer,
-            elevation.lg,
-            isDrawerExpanded && styles.bottomDrawerExpanded,
-          ]}
-        >
-          {/* Drawer Handle & Header */}
-          <TouchableOpacity
-            style={styles.drawerHeader}
-            onPress={toggleDrawer}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={isDrawerExpanded ? 'Collapse officer drawer' : 'Expand officer drawer'}
-          >
-            <View style={styles.dragBar} />
-            <View style={styles.drawerTitleRow}>
-              <View style={styles.titleWithIcon}>
-                <Users size={20} color={colors.primary} />
-                <Text style={styles.drawerTitle}>
-                  Field Officers ({filteredOfficers.length})
+        {/* Empty Fleet Notice Overlay when no officers exist yet */}
+        {ownerOfficers.length === 0 && (
+          <View style={[styles.emptyFleetCard, elevation.lg]}>
+            <Users size={36} color={colors.primary} />
+            <Text style={styles.emptyFleetTitle}>کوئی فیلڈ آفیسر شامل نہیں ہے</Text>
+            <Text style={styles.emptyFleetSub}>
+              لائیو میپ پر لوکیشن اور طے شدہ فاصلہ دیکھنے کے لیے فیلڈ آفیسرز شامل کریں۔
+            </Text>
+          </View>
+        )}
+
+        {/* Sleek Compact Floating FO Info Card (Bottom of Screen) */}
+        {selectedOfficer && (
+          <View style={[styles.compactInfoCard, elevation.lg]}>
+            {/* Officer Primary Row: Avatar + Name + Badges */}
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.officerAvatarPuck}>
+                <Text style={styles.avatarText}>
+                  {selectedOfficer.fullName
+                    .split(' ')
+                    .map((n) => n[0])
+                    .join('')
+                    .substring(0, 2)
+                    .toUpperCase()}
+                </Text>
+                <View
+                  style={[
+                    styles.avatarStatusDot,
+                    selectedOfficer.currentStatus === 'active'
+                      ? styles.dotActive
+                      : selectedOfficer.currentStatus === 'stationary'
+                      ? styles.dotStationary
+                      : styles.dotOffline,
+                  ]}
+                />
+              </View>
+
+              <View style={styles.officerDetailsCol}>
+                <View style={styles.nameRow}>
+                  <Text style={styles.officerName} numberOfLines={1}>
+                    {selectedOfficer.fullName}
+                  </Text>
+                </View>
+                <Text style={styles.officerTerritory} numberOfLines={1}>
+                  {selectedOfficer.assignedTerritory}
                 </Text>
               </View>
-              {isDrawerExpanded ? (
-                <ChevronDown size={20} color={colors.neutralMuted} />
-              ) : (
-                <ChevronUp size={20} color={colors.neutralMuted} />
-              )}
+
+              {/* Status and Battery block */}
+              <View style={styles.headerRightCol}>
+                <StatusBadge status={selectedOfficer.currentStatus} size="sm" />
+                <View style={styles.batteryWrapper}>
+                  <BatteryIndicator
+                    level={selectedOfficer.batteryLevel}
+                    isCharging={selectedOfficer.isCharging}
+                  />
+                </View>
+              </View>
             </View>
-          </TouchableOpacity>
 
-          {/* Officers List with Speed, Territory, Battery, and Status Badge */}
-          <ScrollView
-            style={styles.officerListScroll}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.officerListContent}
-          >
-            {filteredOfficers.map((officer) => {
-              const isSelected = officer.id === selectedOfficerId;
-              return (
+            {/* Telemetry Metrics & Kilometers Done Strip */}
+            <View style={styles.telemetryStrip}>
+              <View style={[styles.telemetryPill, styles.distancePill]}>
+                <Navigation size={12} color={colors.accentBlue} />
+                <Text style={[styles.telemetryPillText, styles.distancePillText]}>
+                  {selectedOfficer.todayDistanceKm || 0} km Done Today (فاصلہ)
+                </Text>
+              </View>
+
+              <View style={styles.telemetryPill}>
+                <Clock size={11} color={colors.primary} />
+                <Text style={styles.telemetryPillText}>
+                  {selectedOfficer.workingHoursDisplay || '09:00 AM - 06:00 PM'}
+                </Text>
+              </View>
+
+              <View style={styles.telemetryPill}>
+                <Text style={styles.telemetryPillText}>
+                  {selectedOfficer.speedKmh > 0
+                    ? `⚡ ${selectedOfficer.speedKmh} km/h`
+                    : '🅿️ Stopped'}
+                </Text>
+              </View>
+
+              <View style={styles.telemetryPill}>
+                <Text style={styles.telemetryPillText}>
+                  {selectedOfficer.lastSeenAt || 'Just now'}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Row & Officer Paging Controls */}
+            <View style={styles.cardActionRow}>
+              {/* Previous / Next officer pagers */}
+              <View style={styles.pagerControls}>
                 <TouchableOpacity
-                  key={officer.id}
-                  onPress={() => setSelectedOfficerId(officer.id)}
+                  onPress={handlePrevOfficer}
+                  style={styles.pagerBtn}
                   activeOpacity={0.7}
-                  style={[
-                    styles.officerCard,
-                    elevation.sm,
-                    isSelected && styles.officerCardSelected,
-                  ]}
+                  accessibilityLabel="Previous officer"
                 >
-                  {/* Top line: Full Name, StatusBadge, Battery */}
-                  <View style={styles.officerCardHeader}>
-                    <View style={styles.officerInfoBlock}>
-                      <Text style={styles.officerName}>{officer.fullName}</Text>
-                      <Text style={styles.officerTerritory}>{officer.assignedTerritory}</Text>
-                    </View>
-                    <View style={styles.badgesCol}>
-                      <StatusBadge status={officer.currentStatus} size="sm" />
-                      <View style={styles.batterySub}>
-                        <BatteryIndicator
-                          level={officer.batteryLevel}
-                          isCharging={officer.isCharging}
-                        />
-                      </View>
-                    </View>
+                  <ChevronLeft size={18} color={colors.neutralDark} />
+                </TouchableOpacity>
+                <Text style={styles.pagerCounterText}>
+                  {selectedIndex + 1}/{filteredOfficers.length}
+                </Text>
+                <TouchableOpacity
+                  onPress={handleNextOfficer}
+                  style={styles.pagerBtn}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Next officer"
+                >
+                  <ChevronRight size={18} color={colors.neutralDark} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Replay Route Button */}
+              <TouchableOpacity
+                style={styles.replayButton}
+                onPress={() => onNavigateToPlayback?.(selectedOfficer.id)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Replay officer route history"
+              >
+                <PlayCircle size={16} color="#FFFFFF" />
+                <Text style={styles.replayButtonText}>Replay Route</Text>
+              </TouchableOpacity>
+
+              {/* Call Officer Button */}
+              <TouchableOpacity
+                style={styles.callButton}
+                onPress={() => handleCallOfficer(selectedOfficer.phone)}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={`Call ${selectedOfficer.fullName}`}
+              >
+                <Phone size={16} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {/* Modal Sheet for Complete Officer List */}
+        <Modal
+          visible={showListModal}
+          animationType="slide"
+          transparent
+          onRequestClose={() => setShowListModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalSheet, elevation.lg]}>
+              <View style={styles.modalHeader}>
+                <View style={styles.modalTitleRow}>
+                  <Users size={20} color={colors.primary} />
+                  <Text style={styles.modalTitle}>
+                    Field Officers Directory ({ownerOfficers.length})
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setShowListModal(false)}
+                  style={styles.modalCloseBtn}
+                >
+                  <X size={20} color={colors.neutralDark} />
+                </TouchableOpacity>
+              </View>
+
+              <FlatList
+                data={ownerOfficers}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.modalListContent}
+                ListEmptyComponent={
+                  <View style={{ padding: 24, alignItems: 'center' }}>
+                    <Text style={{ color: colors.neutralMuted }}>
+                      No officers registered yet
+                    </Text>
                   </View>
-
-                  {/* Telemetry line: Speed, Distance, Last Seen, Hardware Tracker */}
-                  <View style={styles.telemetryRow}>
-                    <View style={styles.telemetryPill}>
-                      <Navigation size={12} color={colors.accentBlue} />
-                      <Text style={styles.telemetryPillText}>
-                        {officer.speedKmh > 0 ? `${officer.speedKmh} km/h` : 'Stationary'}
-                      </Text>
-                    </View>
-
-                    <View style={styles.telemetryPill}>
-                      <Text style={styles.telemetryPillText}>
-                        Seen: {officer.lastSeenAt}
-                      </Text>
-                    </View>
-
-                    {officer.hasHardwareTracker && (
-                      <View style={[styles.telemetryPill, styles.trackerPill]}>
-                        <Cpu size={11} color={colors.primary} />
-                        <Text style={[styles.telemetryPillText, styles.trackerPillText]}>
-                          OBD GPS
+                }
+                renderItem={({ item }) => {
+                  const isCurrent = item.id === selectedOfficer?.id;
+                  return (
+                    <TouchableOpacity
+                      style={[
+                        styles.modalOfficerRow,
+                        isCurrent && styles.modalOfficerRowSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedOfficerId(item.id);
+                        setShowListModal(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.modalOfficerInfo}>
+                        <Text style={styles.modalOfficerName}>{item.fullName}</Text>
+                        <Text style={styles.modalOfficerSub}>
+                          {item.assignedTerritory} • {item.todayDistanceKm || 0} km • {item.workingHoursDisplay || '09:00 AM - 06:00 PM'}
                         </Text>
                       </View>
-                    )}
-                  </View>
-
-                  {/* Action row for selected officer */}
-                  {isSelected && (
-                    <View style={styles.actionRow}>
-                      <TouchableOpacity
-                        style={styles.playbackBtn}
-                        onPress={() => onNavigateToPlayback?.(officer.id)}
-                        activeOpacity={0.8}
-                        accessibilityRole="button"
-                        accessibilityLabel="Replay officer route history"
-                      >
-                        <PlayCircle size={16} color={colors.cardSurface} />
-                        <Text style={styles.playbackBtnText}>Replay Route History</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.callBtn}
-                        onPress={() => {}}
-                        activeOpacity={0.8}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Call ${officer.fullName}`}
-                      >
-                        <Phone size={16} color={colors.primary} />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+                      <StatusBadge status={item.currentStatus} size="sm" />
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+            </View>
+          </View>
+        </Modal>
       </View>
     </SafeAreaView>
   );
@@ -282,36 +415,42 @@ export const OwnerLiveMapScreen: React.FC<OwnerLiveMapScreenProps> = ({
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: '#F1F5E9',
   },
   container: {
     flex: 1,
     position: 'relative',
+    backgroundColor: '#F1F5E9',
   },
   floatingHeader: {
     position: 'absolute',
-    top: 14,
-    left: 16,
-    right: 16,
-    zIndex: 20,
+    top: 12,
+    left: 14,
+    right: 14,
+    zIndex: 25,
   },
   pillBar: {
     flexDirection: 'row',
-    backgroundColor: colors.cardSurface,
-    borderRadius: spacing.pillRadius,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
     padding: 4,
     borderWidth: 1,
-    borderColor: colors.neutralBorder,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
   },
   filterPill: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: spacing.pillRadius,
-    minHeight: 38,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 20,
+    minHeight: 36,
   },
   filterPillActive: {
     backgroundColor: colors.primary,
@@ -322,7 +461,7 @@ const styles = StyleSheet.create({
     color: colors.neutralMuted,
   },
   filterPillTextActive: {
-    color: colors.cardSurface,
+    color: '#FFFFFF',
     fontWeight: typography.fontWeights.bold,
   },
   countBadge: {
@@ -330,174 +469,291 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 10,
-    marginLeft: 6,
+    marginLeft: 5,
   },
   countBadgeActive: {
-    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
   },
   countText: {
-    fontSize: typography.fontSizes.xs - 1,
+    fontSize: 10,
     fontWeight: typography.fontWeights.bold,
     color: colors.neutralDark,
   },
   countTextActive: {
-    color: colors.cardSurface,
+    color: '#FFFFFF',
   },
-  markerWrapper: {
-    position: 'absolute',
-    zIndex: 10,
+  listToggleBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceLight,
+    marginLeft: 4,
   },
-  bottomDrawer: {
+
+  // Empty Fleet Card
+  emptyFleetCard: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: colors.cardSurface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderColor: colors.neutralBorder,
-    height: SCREEN_HEIGHT * 0.42,
+    top: '32%',
+    left: 24,
+    right: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    zIndex: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  emptyFleetTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.neutralDark,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  emptyFleetSub: {
+    fontSize: 12,
+    color: colors.neutralMuted,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 18,
+  },
+
+  // Sleek Compact Floating FO Info Card (~145dp)
+  compactInfoCard: {
+    position: 'absolute',
+    bottom: 14,
+    left: 14,
+    right: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
     zIndex: 30,
   },
-  bottomDrawerExpanded: {
-    height: SCREEN_HEIGHT * 0.72,
-  },
-  drawerHeader: {
-    alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 10,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.neutralDivider,
-  },
-  dragBar: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: colors.neutralLight,
-    marginBottom: 8,
-  },
-  drawerTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    width: '100%',
-  },
-  titleWithIcon: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  drawerTitle: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
-    color: colors.neutralDark,
-    marginLeft: 8,
-  },
-  officerListScroll: {
-    flex: 1,
-  },
-  officerListContent: {
-    padding: 16,
-    paddingBottom: 32,
-  },
-  officerCard: {
-    backgroundColor: colors.cardSurface,
-    borderRadius: spacing.cardRadiusSm,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: colors.neutralBorder,
-    marginBottom: 10,
-  },
-  officerCardSelected: {
+  officerAvatarPuck: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    marginRight: 10,
+    borderWidth: 1.5,
     borderColor: colors.primary,
-    backgroundColor: '#F7FCF9',
   },
-  officerCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+  avatarText: {
+    color: colors.primary,
+    fontSize: 13,
+    fontWeight: '800',
   },
-  officerInfoBlock: {
+  avatarStatusDot: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  dotActive: {
+    backgroundColor: '#10B981',
+  },
+  dotStationary: {
+    backgroundColor: '#F59E0B',
+  },
+  dotOffline: {
+    backgroundColor: '#94A3B8',
+  },
+  officerDetailsCol: {
     flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   officerName: {
-    fontSize: typography.fontSizes.base,
-    fontWeight: typography.fontWeights.bold,
+    fontSize: 15,
+    fontWeight: '700',
     color: colors.neutralDark,
   },
   officerTerritory: {
-    fontSize: typography.fontSizes.xs,
+    fontSize: 11,
     color: colors.neutralMuted,
-    marginTop: 2,
+    marginTop: 1,
   },
-  badgesCol: {
+  headerRightCol: {
     alignItems: 'flex-end',
+    marginLeft: 6,
   },
-  batterySub: {
+  batteryWrapper: {
     marginTop: 4,
   },
-  telemetryRow: {
+
+  // Telemetry row
+  telemetryStrip: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 8,
     flexWrap: 'wrap',
   },
   telemetryPill: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: colors.surfaceLight,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
     borderRadius: 6,
     marginRight: 6,
     marginBottom: 4,
   },
-  trackerPill: {
-    backgroundColor: colors.primaryLight,
+  distancePill: {
+    backgroundColor: '#EFF6FF',
   },
   telemetryPillText: {
-    fontSize: typography.fontSizes.xs,
+    fontSize: 10.5,
     color: colors.neutralMuted,
-    fontWeight: typography.fontWeights.medium,
+    fontWeight: '600',
     marginLeft: 4,
   },
-  trackerPillText: {
-    color: colors.primary,
-    fontWeight: typography.fontWeights.bold,
+  distancePillText: {
+    color: colors.accentBlue,
+    fontWeight: '700',
   },
-  actionRow: {
+
+  // Action & Pager Row
+  cardActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 10,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: colors.neutralDivider,
   },
-  playbackBtn: {
+  pagerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surfaceLight,
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    marginRight: 8,
+  },
+  pagerBtn: {
+    padding: 3,
+  },
+  pagerCounterText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.neutralDark,
+    marginHorizontal: 3,
+  },
+  replayButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.primary,
-    borderRadius: 8,
-    paddingVertical: 10,
-    minHeight: 44, // touch target friendly
+    borderRadius: 10,
+    paddingVertical: 9,
+    minHeight: 40,
     marginRight: 8,
   },
-  playbackBtnText: {
-    color: colors.cardSurface,
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.bold,
-    marginLeft: 6,
+  replayButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    marginLeft: 5,
   },
-  callBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 8,
+  callButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
     backgroundColor: colors.primaryLight,
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Directory Modal
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: SCREEN_HEIGHT * 0.6,
+    paddingTop: 16,
+    paddingBottom: 28,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutralDivider,
+  },
+  modalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: colors.neutralDark,
+    marginLeft: 8,
+  },
+  modalCloseBtn: {
+    padding: 4,
+  },
+  modalListContent: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
+  modalOfficerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.neutralDivider,
+  },
+  modalOfficerRowSelected: {
+    backgroundColor: colors.primaryLight,
+  },
+  modalOfficerInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  modalOfficerName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.neutralDark,
+  },
+  modalOfficerSub: {
+    fontSize: 11,
+    color: colors.neutralMuted,
+    marginTop: 2,
   },
 });

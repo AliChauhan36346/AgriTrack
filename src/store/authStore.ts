@@ -1,6 +1,30 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserRole, FieldOfficer, ShopOwnerAccount } from '../types';
 import { MOCK_OFFICERS } from '../mockData';
+import {
+  syncOwnerToSupabase,
+  syncOfficerToSupabase,
+  verifyAccessCodeInCloud,
+  pushLocationUpdateToCloud,
+  verifyOwnerInCloud,
+  fetchOfficersFromCloud,
+} from '../services/supabase';
+
+const STORAGE_KEYS = {
+  OWNERS: '@agriroute_shop_owners_v1',
+  OFFICERS: '@agriroute_officers_v1',
+  SESSION: '@agriroute_session_v1',
+};
+
+// Phone normalizer (removes spaces, dashes, leading +92/0)
+export function normalizePhone(raw: string): string {
+  let cleaned = raw.replace(/[^0-9]/g, '');
+  if (cleaned.startsWith('92')) {
+    cleaned = '0' + cleaned.slice(2);
+  }
+  return cleaned;
+}
 
 export interface AuthState {
   // Core Auth State
@@ -11,54 +35,63 @@ export interface AuthState {
   currentOfficer: FieldOfficer | null;
   currentOwner: ShopOwnerAccount | null;
 
-  // Officer Registry
+  // Stored Registries
+  registeredOwners: ShopOwnerAccount[];
   registeredOfficers: FieldOfficer[];
 
-  // Form & Navigation State
+  // Form State
   selectedRole: UserRole;
   phoneNumber: string;
-  otpSent: boolean;
   isLoading: boolean;
   error: string | null;
 
-  // Actions
-  loginAs: (role: UserRole, officerId?: string) => void;
-  logout: () => void;
-  setSelectedRole: (role: UserRole) => void;
-  setPhoneNumber: (phone: string) => void;
-  requestOtp: (phone: string) => Promise<boolean>;
-  verifyOtp: (code: string) => Promise<boolean>;
-  setCurrentOfficer: (officer: FieldOfficer) => void;
+  // Lifecycle
+  initializeFromStorage: () => Promise<void>;
 
-  // Direct Officer Access Code Authentication
-  loginWithAccessCode: (accessCode: string) => { success: boolean; error?: string };
+  // Authentication Actions
+  loginWithAccessCode: (accessCode: string) => Promise<{ success: boolean; error?: string }>;
+  loginOwnerWithPhoneAndPin: (phone: string, pin: string) => Promise<{ success: boolean; error?: string }>;
+  loginAs: (role: UserRole, officerId?: string) => void;
+  logout: () => Promise<void>;
 
   // Shop Owner Registration & Officer Management
   registerShopOwner: (data: {
     shopName: string;
     ownerName: string;
     phone: string;
+    pin: string;
     email?: string;
     city: string;
-  }) => ShopOwnerAccount;
+  }) => Promise<ShopOwnerAccount>;
+
   addFieldOfficer: (data: {
     fullName: string;
     phone: string;
     assignedTerritory: string;
     email?: string;
-  }) => { officer: FieldOfficer; accessCode: string };
-  deleteFieldOfficer: (officerId: string) => void;
-}
+    shiftStartTime?: string;
+    shiftEndTime?: string;
+    workingHoursDisplay?: string;
+  }) => Promise<{ officer: FieldOfficer; accessCode: string }>;
 
-const DEFAULT_SHOP_OWNER: ShopOwnerAccount = {
-  id: 'owner-01',
-  shopName: 'Al-Madina Zari Markaz (المدینہ زرعی مرکز)',
-  ownerName: 'Haji Abdul Rasheed',
-  phone: '+92 300 8765432',
-  email: 'owner@almadinazari.pk',
-  city: 'Multan',
-  createdAt: new Date().toISOString(),
-};
+  updateOfficerLocationAndDistance: (
+    officerId: string,
+    location: { latitude: number; longitude: number; speed?: number; heading?: number },
+    distanceDeltaKm: number
+  ) => Promise<void>;
+
+  deleteFieldOfficer: (officerId: string) => Promise<void>;
+
+  // Cloud Sync
+  fetchCloudOfficersForOwner: () => Promise<void>;
+  mergeOfficersFromCloud: (cloudOfficers: FieldOfficer[]) => void;
+  updateOfficerFromCloudPayload: (payload: Partial<FieldOfficer> & { id: string }) => void;
+
+  // Form setters
+  setSelectedRole: (role: UserRole) => void;
+  setPhoneNumber: (phone: string) => void;
+  setCurrentOfficer: (officer: FieldOfficer) => void;
+}
 
 export const useAuthStore = create<AuthState>((set, get) => ({
   userRole: null,
@@ -66,31 +99,248 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   currentOfficerId: null,
   currentOfficerName: '',
   currentOfficer: null,
-  currentOwner: DEFAULT_SHOP_OWNER,
+  currentOwner: null,
 
-  registeredOfficers: [...MOCK_OFFICERS],
+  registeredOwners: [],
+  registeredOfficers: [],
 
   selectedRole: 'officer',
-  phoneNumber: '+92 300 1234567',
-  otpSent: false,
+  phoneNumber: '',
   isLoading: false,
   error: null,
 
-  loginWithAccessCode: (code: string) => {
-    const cleaned = code.trim().toUpperCase();
-    if (!cleaned) {
-      set({ error: 'براہ کرم اپنا آفیسر کوڈ درج کریں (Please enter your access code)' });
-      return { success: false, error: 'Access code required' };
+  initializeFromStorage: async () => {
+    try {
+      // 1. Load registered shop owners
+      const storedOwners = await AsyncStorage.getItem(STORAGE_KEYS.OWNERS);
+      let owners: ShopOwnerAccount[] = [];
+      if (storedOwners) {
+        owners = JSON.parse(storedOwners);
+        set({ registeredOwners: owners });
+      }
+
+      // 2. Load registered officers (pure owner-created fleet, filter out legacy mock IDs)
+      const storedOfficers = await AsyncStorage.getItem(STORAGE_KEYS.OFFICERS);
+      if (storedOfficers) {
+        const parsed: FieldOfficer[] = JSON.parse(storedOfficers);
+        const cleanedOfficers = parsed.filter((o) => !o.id.startsWith('off-0'));
+        set({ registeredOfficers: cleanedOfficers });
+      } else {
+        set({ registeredOfficers: [] });
+        await AsyncStorage.setItem(STORAGE_KEYS.OFFICERS, JSON.stringify([]));
+      }
+
+      // 3. Restore last active session if available
+      const storedSession = await AsyncStorage.getItem(STORAGE_KEYS.SESSION);
+      if (storedSession) {
+        const session = JSON.parse(storedSession);
+        if (session.role === 'owner' && session.ownerId) {
+          const owner = owners.find((o) => o.id === session.ownerId);
+          if (owner) {
+            set({
+              userRole: 'owner',
+              selectedRole: 'owner',
+              isAuthenticated: true,
+              currentOwner: owner,
+            });
+            fetchOfficersFromCloud(owner.id).then((cloudOfficers) => {
+              if (cloudOfficers && cloudOfficers.length > 0) {
+                get().mergeOfficersFromCloud(cloudOfficers);
+              }
+            });
+          }
+        } else if (session.role === 'officer' && session.officerId) {
+          const officers = get().registeredOfficers;
+          const officer = officers.find((o) => o.id === session.officerId);
+          if (officer) {
+            set({
+              userRole: 'officer',
+              selectedRole: 'officer',
+              isAuthenticated: true,
+              currentOfficer: officer,
+              currentOfficerId: officer.id,
+              currentOfficerName: officer.fullName,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[AuthStore] Failed to load data from AsyncStorage:', err);
+    }
+  },
+
+  registerShopOwner: async (data) => {
+    set({ isLoading: true, error: null });
+    const normalized = normalizePhone(data.phone);
+
+    const newOwner: ShopOwnerAccount = {
+      id: `owner_${Date.now()}`,
+      shopName: data.shopName,
+      ownerName: data.ownerName,
+      phone: data.phone,
+      pin: data.pin.trim(),
+      email: data.email,
+      city: data.city,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Filter out existing owner with same phone number
+    const updatedOwners = [
+      newOwner,
+      ...get().registeredOwners.filter((o) => normalizePhone(o.phone) !== normalized),
+    ];
+
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.OWNERS, JSON.stringify(updatedOwners));
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.SESSION,
+        JSON.stringify({ role: 'owner', ownerId: newOwner.id })
+      );
+    } catch (e) {
+      console.warn('[AuthStore] Storage save error:', e);
     }
 
-    const officer = get().registeredOfficers.find(
+    set({
+      registeredOwners: updatedOwners,
+      currentOwner: newOwner,
+      userRole: 'owner',
+      selectedRole: 'owner',
+      isAuthenticated: true,
+      error: null,
+      isLoading: false,
+    });
+
+    // Sync to Supabase Cloud for multi-device access
+    syncOwnerToSupabase(newOwner).catch(() => {});
+
+    return newOwner;
+  },
+
+  loginOwnerWithPhoneAndPin: async (phoneInput: string, pinInput: string) => {
+    set({ isLoading: true, error: null });
+    const normalized = normalizePhone(phoneInput);
+    const cleanPin = pinInput.trim();
+
+    if (!normalized) {
+      const err = 'براہ کرم اپنا موبائل نمبر درج کریں (Please enter mobile number)';
+      set({ isLoading: false, error: err });
+      return { success: false, error: err };
+    }
+
+    if (!cleanPin || cleanPin.length !== 4) {
+      const err = 'براہ کرم 4 ہندسوں کا سیکیورٹی پن درج کریں (Please enter 4-digit PIN)';
+      set({ isLoading: false, error: err });
+      return { success: false, error: err };
+    }
+
+    // Lookup owner in registered owners
+    const owners = get().registeredOwners;
+    let foundOwner = owners.find((o) => normalizePhone(o.phone) === normalized);
+
+    if (!foundOwner) {
+      // Check Supabase Cloud if owner registered on another phone
+      set({ isLoading: true });
+      const cloudRes = await verifyOwnerInCloud(phoneInput, cleanPin);
+      set({ isLoading: false });
+
+      if (cloudRes.success && cloudRes.owner) {
+        foundOwner = cloudRes.owner;
+        const updatedOwners = [foundOwner, ...get().registeredOwners];
+        set({ registeredOwners: updatedOwners });
+        try {
+          await AsyncStorage.setItem(STORAGE_KEYS.OWNERS, JSON.stringify(updatedOwners));
+        } catch {}
+      }
+    }
+
+    if (!foundOwner) {
+      const err =
+        'اس موبائل نمبر پر کوئی دکان کھاتہ نہیں ملا۔ براہ کرم پہلے "نیا دکان کھاتہ بنائیں" پر کلک کریں۔ (No account found for this mobile number. Please register first.)';
+      set({ isLoading: false, error: err });
+      return { success: false, error: err };
+    }
+
+    // Verify PIN
+    if (foundOwner.pin && foundOwner.pin !== cleanPin) {
+      const err =
+        'درج کردہ 4 ہندسوں کا پن درست نہیں ہے۔ دوبارہ کوشش کریں۔ (Incorrect 4-digit PIN. Please try again.)';
+      set({ isLoading: false, error: err });
+      return { success: false, error: err };
+    }
+
+    // Save session
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.SESSION,
+        JSON.stringify({ role: 'owner', ownerId: foundOwner.id })
+      );
+    } catch (e) {
+      console.warn('[AuthStore] Session save error:', e);
+    }
+
+    set({
+      userRole: 'owner',
+      selectedRole: 'owner',
+      isAuthenticated: true,
+      currentOwner: foundOwner,
+      currentOfficer: null,
+      currentOfficerId: null,
+      currentOfficerName: '',
+      error: null,
+      isLoading: false,
+    });
+
+    // Fetch cloud officers for this owner in the background
+    fetchOfficersFromCloud(foundOwner.id).then((cloudOfficers) => {
+      if (cloudOfficers && cloudOfficers.length > 0) {
+        get().mergeOfficersFromCloud(cloudOfficers);
+      }
+    });
+
+    return { success: true };
+  },
+
+  loginWithAccessCode: async (code: string) => {
+    const cleaned = code.trim().toUpperCase();
+    if (!cleaned) {
+      const err = 'براہ کرم اپنا آفیسر رسائی کوڈ درج کریں (Please enter your access code)';
+      set({ error: err });
+      return { success: false, error: err };
+    }
+
+    let officer = get().registeredOfficers.find(
       (o) =>
         o.accessCode.toUpperCase() === cleaned ||
         o.id.toUpperCase() === cleaned ||
         o.id.replace('-', '_').toUpperCase() === cleaned
     );
 
+    // If not found in local phone storage, verify with Supabase Cloud
+    if (!officer) {
+      set({ isLoading: true });
+      const cloudResult = await verifyAccessCodeInCloud(cleaned);
+      set({ isLoading: false });
+
+      if (cloudResult.success && cloudResult.officer) {
+        officer = cloudResult.officer;
+        const updated = [officer, ...get().registeredOfficers];
+        set({ registeredOfficers: updated });
+        try {
+          await AsyncStorage.setItem(STORAGE_KEYS.OFFICERS, JSON.stringify(updated));
+        } catch {}
+      }
+    }
+
     if (officer) {
+      try {
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.SESSION,
+          JSON.stringify({ role: 'officer', officerId: officer.id })
+        );
+      } catch (e) {
+        console.warn('[AuthStore] Session save error:', e);
+      }
+
       set({
         userRole: 'officer',
         selectedRole: 'officer',
@@ -109,31 +359,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  registerShopOwner: (data) => {
-    const newOwner: ShopOwnerAccount = {
-      id: `owner-${Date.now()}`,
-      shopName: data.shopName,
-      ownerName: data.ownerName,
-      phone: data.phone,
-      email: data.email,
-      city: data.city,
-      createdAt: new Date().toISOString(),
-    };
-
-    set({
-      currentOwner: newOwner,
-      userRole: 'owner',
-      selectedRole: 'owner',
-      isAuthenticated: true,
-      error: null,
-      isLoading: false,
-    });
-
-    return newOwner;
-  },
-
-  addFieldOfficer: (data) => {
-    // Generate a memorable 4-digit numeric code with prefix FO-
+  addFieldOfficer: async (data) => {
     const existingCodes = new Set(get().registeredOfficers.map((o) => o.accessCode.toUpperCase()));
     let randomNum = Math.floor(1000 + Math.random() * 9000);
     let generatedCode = `FO-${randomNum}`;
@@ -145,15 +371,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const currentOwner = get().currentOwner;
     const newOfficer: FieldOfficer = {
-      id: `off-${Date.now()}`,
+      id: `off_${Date.now()}`,
       accessCode: generatedCode,
-      ownerId: currentOwner?.id || 'owner-01',
+      ownerId: currentOwner?.id || 'owner_01',
       fullName: data.fullName,
       name: data.fullName,
       roleTitle: 'Field Officer (فیلڈ آفیسر)',
       phone: data.phone,
       email: data.email,
       assignedTerritory: data.assignedTerritory,
+      shiftStartTime: data.shiftStartTime || '09:00',
+      shiftEndTime: data.shiftEndTime || '18:00',
+      workingHoursDisplay: data.workingHoursDisplay || '09:00 AM - 06:00 PM',
       currentStatus: 'offline',
       status: 'offline',
       batteryLevel: 100,
@@ -174,38 +403,152 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       queuedPingsCount: 0,
     };
 
-    set((state) => ({
-      registeredOfficers: [newOfficer, ...state.registeredOfficers],
-    }));
+    const updatedOfficers = [newOfficer, ...get().registeredOfficers];
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.OFFICERS, JSON.stringify(updatedOfficers));
+    } catch (e) {
+      console.warn('[AuthStore] Officer save error:', e);
+    }
+
+    set({ registeredOfficers: updatedOfficers });
+
+    // Sync to Supabase Cloud so Phone B can verify access code
+    syncOfficerToSupabase(newOfficer).catch((err) => {
+      console.warn('[AuthStore] Cloud sync officer failed:', err);
+    });
 
     return { officer: newOfficer, accessCode: generatedCode };
   },
 
-  deleteFieldOfficer: (officerId: string) => {
-    set((state) => ({
-      registeredOfficers: state.registeredOfficers.filter((o) => o.id !== officerId),
-    }));
+  updateOfficerLocationAndDistance: async (officerId, loc, distanceDeltaKm) => {
+    const officers = get().registeredOfficers;
+    const updatedOfficers = officers.map((o) => {
+      if (o.id !== officerId) return o;
+      const newDistance = Number(((o.todayDistanceKm || 0) + distanceDeltaKm).toFixed(2));
+      const speed = loc.speed !== undefined ? loc.speed : o.speedKmh;
+      return {
+        ...o,
+        currentLocation: {
+          latitude: loc.latitude,
+          longitude: loc.longitude,
+          speed,
+          heading: loc.heading || o.currentLocation?.heading || 0,
+          timestamp: Date.now(),
+        },
+        speedKmh: speed,
+        todayDistanceKm: newDistance,
+        lastSeenAt: 'Just now (ابھی)',
+        lastPingTime: 'Just now (ابھی)',
+        currentStatus: 'active' as const,
+        status: 'active' as const,
+      };
+    });
+
+    set({ registeredOfficers: updatedOfficers });
+
+    if (get().currentOfficerId === officerId) {
+      const me = updatedOfficers.find((o) => o.id === officerId);
+      if (me) set({ currentOfficer: me });
+    }
+
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.OFFICERS, JSON.stringify(updatedOfficers));
+    } catch (e) {
+      console.warn('[AuthStore] Officer distance update error:', e);
+    }
+
+    // Push live coordinates & distance to Supabase Cloud so Phone A (Owner) sees live marker moving
+    pushLocationUpdateToCloud(officerId, loc, distanceDeltaKm).catch((err) => {
+      console.warn('[AuthStore] Cloud push location failed:', err);
+    });
+  },
+
+  deleteFieldOfficer: async (officerId: string) => {
+    const updatedOfficers = get().registeredOfficers.filter((o) => o.id !== officerId);
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.OFFICERS, JSON.stringify(updatedOfficers));
+    } catch (e) {
+      console.warn('[AuthStore] Officer delete error:', e);
+    }
+    set({ registeredOfficers: updatedOfficers });
+  },
+
+  fetchCloudOfficersForOwner: async () => {
+    const owner = get().currentOwner;
+    if (!owner) return;
+    try {
+      const cloudOfficers = await fetchOfficersFromCloud(owner.id);
+      if (cloudOfficers && cloudOfficers.length > 0) {
+        get().mergeOfficersFromCloud(cloudOfficers);
+      }
+    } catch (err) {
+      console.warn('[AuthStore] fetchCloudOfficers error:', err);
+    }
+  },
+
+  mergeOfficersFromCloud: (cloudOfficers: FieldOfficer[]) => {
+    const existing = get().registeredOfficers;
+    const existingMap = new Map(existing.map((o) => [o.id, o]));
+
+    cloudOfficers.forEach((co) => {
+      const current = existingMap.get(co.id);
+      existingMap.set(co.id, {
+        ...(current || co),
+        ...co,
+        // Preserve current location if newer
+        currentLocation: co.currentLocation || current?.currentLocation,
+      });
+    });
+
+    const merged = Array.from(existingMap.values());
+    set({ registeredOfficers: merged });
+    AsyncStorage.setItem(STORAGE_KEYS.OFFICERS, JSON.stringify(merged)).catch(() => {});
+  },
+
+  updateOfficerFromCloudPayload: (payload) => {
+    const officers = get().registeredOfficers;
+    let found = false;
+    const updated = officers.map((o) => {
+      if (o.id === payload.id) {
+        found = true;
+        return {
+          ...o,
+          ...payload,
+          currentLocation: payload.currentLocation || o.currentLocation,
+        };
+      }
+      return o;
+    });
+
+    if (!found && payload.fullName) {
+      updated.unshift(payload as FieldOfficer);
+    }
+
+    set({ registeredOfficers: updated });
+
+    if (get().currentOfficerId === payload.id) {
+      const me = updated.find((o) => o.id === payload.id);
+      if (me) set({ currentOfficer: me });
+    }
   },
 
   loginAs: (role: UserRole, officerId?: string) => {
     if (role === 'owner') {
-      const owner = get().currentOwner || DEFAULT_SHOP_OWNER;
+      const owner = get().currentOwner || get().registeredOwners[0];
       set({
         userRole: 'owner',
         selectedRole: 'owner',
         isAuthenticated: true,
-        currentOwner: owner,
+        currentOwner: owner || null,
         currentOfficer: null,
         currentOfficerId: null,
         currentOfficerName: '',
         error: null,
         isLoading: false,
-        otpSent: false,
       });
       return;
     }
 
-    // Role is officer
     const targetOfficerId = officerId || 'off-01';
     const officers = get().registeredOfficers;
     const matchedOfficer =
@@ -219,55 +562,34 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       userRole: 'officer',
       selectedRole: 'officer',
       isAuthenticated: true,
-      currentOfficerId: matchedOfficer.id,
-      currentOfficerName: matchedOfficer.fullName || matchedOfficer.name || 'Muhammad Tariq',
-      currentOfficer: matchedOfficer,
+      currentOfficerId: matchedOfficer?.id || 'off-01',
+      currentOfficerName: matchedOfficer?.fullName || 'Field Officer',
+      currentOfficer: matchedOfficer || null,
       error: null,
       isLoading: false,
-      otpSent: false,
     });
   },
 
-  logout: () => {
+  logout: async () => {
+    try {
+      await AsyncStorage.removeItem(STORAGE_KEYS.SESSION);
+    } catch (e) {
+      console.warn('[AuthStore] Session remove error:', e);
+    }
+
     set({
       userRole: null,
       isAuthenticated: false,
       currentOfficerId: null,
       currentOfficerName: '',
       currentOfficer: null,
-      otpSent: false,
       error: null,
       isLoading: false,
     });
   },
 
   setSelectedRole: (role: UserRole) => set({ selectedRole: role }),
-
   setPhoneNumber: (phone: string) => set({ phoneNumber: phone }),
-
-  requestOtp: async (phone: string) => {
-    set({ isLoading: true, error: null });
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    set({ phoneNumber: phone, otpSent: true, isLoading: false });
-    return true;
-  },
-
-  verifyOtp: async (code: string) => {
-    set({ isLoading: true, error: null });
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    if (code.length === 6) {
-      const activeRole = get().selectedRole || 'owner';
-      get().loginAs(activeRole);
-      return true;
-    } else {
-      set({
-        isLoading: false,
-        error: 'براہ کرم 6 ہندسوں کا کوڈ درج کریں (Please enter a valid 6-digit code)',
-      });
-      return false;
-    }
-  },
-
   setCurrentOfficer: (officer: FieldOfficer) =>
     set({
       currentOfficer: officer,
@@ -275,3 +597,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentOfficerName: officer.fullName || officer.name || '',
     }),
 }));
+
+// Initialize storage on app load
+useAuthStore.getState().initializeFromStorage();

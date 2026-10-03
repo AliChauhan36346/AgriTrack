@@ -25,6 +25,7 @@ import {
   MOCK_OFFICERS,
 } from '../../mockData';
 import { useOfficerRoute } from '../../hooks/useOfficerRoute';
+import { useAuthStore } from '../../store/authStore';
 import { MapContainer } from '../../components/map/MapContainer';
 import { StopPin } from '../../components/map/StopPin';
 import { PlaybackScrubber } from '../../components/ui/PlaybackScrubber';
@@ -51,7 +52,11 @@ export const RoutePlaybackScreen: React.FC<RoutePlaybackScreenProps> = ({
   officerId = 'off-01',
   onBack,
 }) => {
-  const officer = MOCK_OFFICERS.find((o) => o.id === officerId) ?? MOCK_OFFICERS[0];
+  const registeredOfficers = useAuthStore((state) => state.registeredOfficers);
+  const officer =
+    registeredOfficers.find((o) => o.id === officerId) ??
+    MOCK_OFFICERS.find((o) => o.id === officerId) ??
+    MOCK_OFFICERS[0];
   const [selectedStopId, setSelectedStopId] = useState<string | null>(null);
 
   const {
