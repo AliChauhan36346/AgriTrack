@@ -8,6 +8,9 @@ import {
   StatusBar,
   NativeSyntheticEvent,
   TextInputKeyPressEventData,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ArrowLeft, ShieldCheck, RefreshCw } from 'lucide-react-native';
@@ -115,91 +118,100 @@ export const PhoneAuthScreen: React.FC<PhoneAuthScreenProps> = ({
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.surfaceLight} />
 
-      <View style={styles.container}>
-        {/* Navigation Bar */}
-        <View style={styles.navBar}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={onBackToRole}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel="Back to role selection"
-          >
-            <ArrowLeft size={22} color={colors.neutralDark} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Content Header */}
-        <View style={styles.header}>
-          <View style={[styles.iconCircle, elevation.sm]}>
-            <ShieldCheck size={32} color={colors.primary} />
-          </View>
-          <Text style={styles.title}>Enter 6-Digit OTP</Text>
-          <Text style={styles.subtitle}>
-            We have sent a verification code to{' '}
-            <Text style={styles.phoneHighlight}>{phoneNumber}</Text>
-          </Text>
-        </View>
-
-        {/* 6-Digit Boxes with touch target >= 48dp */}
-        <View style={styles.otpGrid}>
-          {otp.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(ref) => {
-                inputRefs.current[index] = ref;
-              }}
-              style={[
-                styles.otpBox,
-                digit ? styles.otpBoxFilled : null,
-                localError || authError ? styles.otpBoxError : null,
-              ]}
-              value={digit}
-              onChangeText={(val) => handleOtpChange(val, index)}
-              onKeyPress={(e) => handleKeyPress(e, index)}
-              keyboardType="number-pad"
-              maxLength={1}
-              selectTextOnFocus
-              textAlign="center"
-              autoFocus={index === 0}
-              accessibilityLabel={`OTP digit ${index + 1}`}
-            />
-          ))}
-        </View>
-
-        {/* Error message */}
-        {(localError || authError) && (
-          <Text style={styles.errorMessage}>{localError || authError}</Text>
-        )}
-
-        {/* Resend link */}
-        <View style={styles.resendContainer}>
-          {timer > 0 ? (
-            <Text style={styles.timerText}>
-              Resend code in <Text style={styles.timerCount}>{timer}s</Text>
-            </Text>
-          ) : (
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[styles.container, { flexGrow: 1, paddingBottom: 60 }]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Navigation Bar */}
+          <View style={styles.navBar}>
             <TouchableOpacity
-              onPress={handleResend}
-              style={styles.resendBtn}
+              style={styles.backButton}
+              onPress={onBackToRole}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Back to role selection"
             >
-              <RefreshCw size={16} color={colors.primary} style={styles.resendIcon} />
-              <Text style={styles.resendText}>Resend OTP</Text>
+              <ArrowLeft size={22} color={colors.neutralDark} />
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
 
-        {/* Verify Button */}
-        <View style={styles.buttonWrapper}>
-          <Button
-            title="Verify & Enter Portal"
-            onPress={handleVerify}
-            isLoading={isLoading}
-            size="lg"
-          />
-        </View>
-      </View>
+          {/* Content Header */}
+          <View style={styles.header}>
+            <View style={[styles.iconCircle, elevation.sm]}>
+              <ShieldCheck size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.title}>Enter 6-Digit OTP</Text>
+            <Text style={styles.subtitle}>
+              We have sent a verification code to{' '}
+              <Text style={styles.phoneHighlight}>{phoneNumber}</Text>
+            </Text>
+          </View>
+
+          {/* 6-Digit Boxes with touch target >= 48dp */}
+          <View style={styles.otpGrid}>
+            {otp.map((digit, index) => (
+              <TextInput
+                key={index}
+                ref={(ref) => {
+                  inputRefs.current[index] = ref;
+                }}
+                style={[
+                  styles.otpBox,
+                  digit ? styles.otpBoxFilled : null,
+                  localError || authError ? styles.otpBoxError : null,
+                ]}
+                value={digit}
+                onChangeText={(val) => handleOtpChange(val, index)}
+                onKeyPress={(e) => handleKeyPress(e, index)}
+                keyboardType="number-pad"
+                maxLength={1}
+                selectTextOnFocus
+                textAlign="center"
+                autoFocus={index === 0}
+                accessibilityLabel={`OTP digit ${index + 1}`}
+              />
+            ))}
+          </View>
+
+          {/* Error message */}
+          {(localError || authError) && (
+            <Text style={styles.errorMessage}>{localError || authError}</Text>
+          )}
+
+          {/* Resend link */}
+          <View style={styles.resendContainer}>
+            {timer > 0 ? (
+              <Text style={styles.timerText}>
+                Resend code in <Text style={styles.timerCount}>{timer}s</Text>
+              </Text>
+            ) : (
+              <TouchableOpacity
+                onPress={handleResend}
+                style={styles.resendBtn}
+                activeOpacity={0.7}
+              >
+                <RefreshCw size={16} color={colors.primary} style={styles.resendIcon} />
+                <Text style={styles.resendText}>Resend OTP</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Verify Button */}
+          <View style={styles.buttonWrapper}>
+            <Button
+              title="Verify & Enter Portal"
+              onPress={handleVerify}
+              isLoading={isLoading}
+              size="lg"
+            />
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 };

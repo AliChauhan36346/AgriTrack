@@ -84,7 +84,8 @@ export const OwnerRegisterModal: React.FC<OwnerRegisterModalProps> = ({
     >
       <KeyboardAvoidingView
         style={styles.modalOverlay}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 24}
       >
         <View style={[styles.modalCard, elevation.lg]}>
           {/* Header */}
@@ -105,6 +106,7 @@ export const OwnerRegisterModal: React.FC<OwnerRegisterModalProps> = ({
 
           <ScrollView
             showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.formContainer}
           >
             {/* Shop Name */}
@@ -240,7 +242,7 @@ const styles = StyleSheet.create({
   formContainer: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 30,
+    paddingBottom: 140,
   },
   fieldGroup: {
     marginBottom: 16,

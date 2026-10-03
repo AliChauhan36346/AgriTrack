@@ -32,7 +32,14 @@
     },
     "plugins": [
       "expo-sqlite",
-      "react-native-background-geolocation"
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "AgriRoute needs background location access to verify your field shift route even when your phone is in your pocket.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ]
     ],
     "extra": {
       "eas": {
